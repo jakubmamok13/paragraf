@@ -116,53 +116,142 @@ export const normalizeForMatch = (s: string) =>
     .replace(/\s+/g, " ")
     .trim();
 
+interface Tok {
+  /** Lower case, no Polish letters, no ligatures. */
+  norm: string;
+  /** First letters only: tolerates another case or ending ("nieruchomość" / "nieruchomości"). */
+  stem: string;
+  start: number;
+  end: number;
+}
+
+const foldChars = (s: string) =>
+  s.normalize("NFKD").replace(/[̀-ͯ]/g, "").replace(/ł/g, "l").replace(/Ł/g, "L").toLowerCase();
+
+/** Words and numbers with their place in the original text (punctuation, §, quotes are ignored). */
+function tokens(text: string): Tok[] {
+  const out: Tok[] = [];
+  for (const m of text.matchAll(/[\p{L}\p{N}]+/gu)) {
+    const norm = foldChars(m[0]);
+    out.push({ norm, stem: /^\d/.test(norm) ? norm : norm.slice(0, 5), start: m.index!, end: m.index! + m[0].length });
+  }
+  return out;
+}
+
+/** Longest common subsequence of stems; returns its length and the first/last matched index in `b`. */
+function lcs(a: Tok[], b: Tok[]): { len: number; first: number; last: number } {
+  const n = a.length;
+  const m = b.length;
+  const dp: Uint16Array[] = Array.from({ length: n + 1 }, () => new Uint16Array(m + 1));
+  for (let i = 1; i <= n; i++) {
+    for (let j = 1; j <= m; j++) {
+      dp[i]![j] = a[i - 1]!.stem === b[j - 1]!.stem ? dp[i - 1]![j - 1]! + 1 : Math.max(dp[i - 1]![j]!, dp[i]![j - 1]!);
+    }
+  }
+  // Walk back to find which tokens of b took part.
+  let i = n;
+  let j = m;
+  let first = -1;
+  let last = -1;
+  while (i > 0 && j > 0) {
+    if (a[i - 1]!.stem === b[j - 1]!.stem) {
+      if (last < 0) last = j - 1;
+      first = j - 1;
+      i--;
+      j--;
+    } else if (dp[i - 1]![j]! >= dp[i]![j - 1]!) i--;
+    else j--;
+  }
+  return { len: dp[n]![m]!, first, last };
+}
+
+/** One piece of a quote (between "…") located in `src` tokens from position `from`. */
+function locateSegment(q: Tok[], src: Tok[], from: number): { first: number; last: number } | null {
+  if (!q.length) return null;
+  // Exact sequence (letters folded, punctuation ignored).
+  for (let i = from; i + q.length <= src.length; i++) {
+    let k = 0;
+    while (k < q.length && src[i + k]!.norm === q[k]!.norm) k++;
+    if (k === q.length) return { first: i, last: i + q.length - 1 };
+  }
+  // Short pieces must match exactly: three words prove nothing.
+  if (q.length < 4) return null;
+  // Close enough: most words in the same order, with a word or two missing, added or inflected otherwise.
+  const span = Math.ceil(q.length * 1.4) + 2;
+  let best: { len: number; first: number; last: number } | null = null;
+  const anchors = new Set(q.slice(0, 3).map((t) => t.stem));
+  for (let i = from; i < src.length; i++) {
+    if (!anchors.has(src[i]!.stem)) continue;
+    const r = lcs(q, src.slice(i, i + span));
+    if (r.len && (!best || r.len > best.len)) best = { len: r.len, first: i + r.first, last: i + r.last };
+  }
+  if (!best) return null;
+  const covered = best.len / q.length;
+  const width = best.last - best.first + 1;
+  if (covered < 0.8 || best.len / width < 0.7) return null;
+  return best;
+}
+
 /**
- * Finds a quote in a fragment. Exact (after normalising spaces, quotes and
- * dashes) or, failing that, the window of the fragment that shares at least
- * 85% of the quote's words in order. Returns the fragment's own wording.
+ * Finds a quote in a fragment, the way a small model writes quotes: Polish
+ * letters dropped, punctuation and "§ 2"/"§2" changed, a word missing, added
+ * or in another form, the middle cut with "…". Returns the fragment's own
+ * wording, so what is stored is always the real source text.
  */
 export function locateQuote(quote: string, text: string): { start: number; end: number; text: string } | null {
-  const q = normalizeForMatch(quote).replace(/^[.…\s]+|[.…\s]+$/g, "");
-  if (q.length < 8) return null;
-  // Map normalised positions back to the original text.
-  const map: number[] = [];
-  let norm = "";
-  const lower = text.toLowerCase();
-  for (let i = 0; i < text.length; i++) {
-    let ch = lower[i]!;
-    if (/[„”“"«»]/.test(ch)) ch = '"';
-    else if (/[‘’']/.test(ch)) ch = "'";
-    else if (/[–—−]/.test(ch)) ch = "-";
-    else if (/\s/.test(ch)) {
-      if (norm.endsWith(" ") || !norm) continue;
-      ch = " ";
+  const src = tokens(text);
+  const segments = quote
+    .split(/\s*(?:\(\s*(?:\.\.\.|…)\s*\)|\[\s*(?:\.\.\.|…)\s*\]|\.\.\.|…)\s*/)
+    .map(tokens)
+    .filter((seg) => seg.length > 0);
+  if (!segments.length || segments.reduce((n, s) => n + s.length, 0) < 2) return null;
+  let from = 0;
+  let first = -1;
+  let last = -1;
+  for (const seg of segments) {
+    const r = locateSegment(seg, src, from);
+    if (!r) return null;
+    if (first < 0) first = r.first;
+    last = r.last;
+    from = r.last + 1;
+  }
+  const start = src[first]!.start;
+  const end = src[last]!.end;
+  return { start, end, text: text.slice(start, end) };
+}
+
+const CONTENT_STOP = new Set(
+  "a aby albo ale bez by być czy dla do gdy i ich im iż jak jako je jego jej jest jeśli już lub ma może na nie niż o od oraz po pod przez przy się są ta tak te tego to tym u w we z za ze że który która które których którym jeżeli albo".split(" ").map(foldChars),
+);
+
+/**
+ * When the model's quote cannot be found, the sentence (or two neighbouring
+ * sentences) of the fragment that holds most of the claim's words, if it
+ * holds at least 70% of them. An invented claim finds no such passage.
+ */
+export function supportingPassage(claim: string, text: string): { start: number; end: number; text: string } | null {
+  const want = [...new Set(tokens(claim).filter((t) => t.norm.length >= 3 && !CONTENT_STOP.has(t.norm)).map((t) => t.stem))];
+  if (want.length < 3) return null;
+  const bounds: { start: number; end: number }[] = [];
+  const re = /[^.!?;\n]+(?:[.!?;]+|$)/g;
+  for (const m of text.matchAll(re)) if (m[0].trim()) bounds.push({ start: m.index!, end: m.index! + m[0].length });
+  let best: { score: number; start: number; end: number } | null = null;
+  for (let i = 0; i < bounds.length; i++) {
+    for (const j of [i, i + 1]) {
+      if (j >= bounds.length) continue;
+      const start = bounds[i]!.start;
+      const end = bounds[j]!.end;
+      const have = new Set(tokens(text.slice(start, end)).map((t) => t.stem));
+      const score = want.filter((w) => have.has(w)).length / want.length - (j > i ? 0.05 : 0);
+      if (!best || score > best.score) best = { score, start, end };
     }
-    norm += ch;
-    map.push(i);
   }
-  const at = norm.indexOf(q);
-  if (at >= 0) {
-    const start = map[at]!;
-    const end = map[at + q.length - 1]! + 1;
-    return { start, end, text: text.slice(start, end) };
-  }
-  // Fuzzy: sliding window over words.
-  const qWords = q.split(" ");
-  if (qWords.length < 4) return null;
-  const words = [...norm.matchAll(/\S+/g)];
-  let best: { score: number; i: number } | null = null;
-  for (let i = 0; i + qWords.length <= words.length + 2; i++) {
-    const win = words.slice(i, i + qWords.length).map((m) => m[0]);
-    let hit = 0;
-    for (let k = 0; k < qWords.length; k++) if (win[k] === qWords[k] || (win[k] && qWords[k] && win[k]!.slice(0, 5) === qWords[k]!.slice(0, 5))) hit++;
-    const score = hit / qWords.length;
-    if (!best || score > best.score) best = { score, i };
-  }
-  if (!best || best.score < 0.85) return null;
-  const first = words[best.i]!;
-  const last = words[Math.min(words.length - 1, best.i + qWords.length - 1)]!;
-  const start = map[first.index!]!;
-  const end = map[last.index! + last[0].length - 1]! + 1;
+  if (!best || best.score < 0.7) return null;
+  const raw = text.slice(best.start, best.end);
+  const lead = raw.length - raw.trimStart().length;
+  const trail = raw.length - raw.trimEnd().length;
+  const start = best.start + lead;
+  const end = best.end - trail;
   return { start, end, text: text.slice(start, end) };
 }
 

@@ -34,7 +34,7 @@ import {
   workshopCounts,
   withOverrides,
 } from "../src";
-import { FAKE_MODELS, fakeFetch } from "./fake-model";
+import { FAKE_MODELS, fakeFetch, setSloppy } from "./fake-model";
 
 const here = (p: string) => fileURLToPath(new URL(p, import.meta.url));
 const fixture = (name: string) => new Uint8Array(readFileSync(here(`./fixtures/${name}`)));
@@ -94,7 +94,7 @@ describe("pipeline with the sample note, an old textbook and an exam list", () =
     expect(fields.some((t) => t.includes("tytuł prawny"))).toBe(false);
     expect(fields.some((t) => t.includes("176"))).toBe(false);
     const sugg = listSuggestions(db, s.id).map((x) => x.text);
-    expect(sugg.some((t) => t.includes("tytuł prawny") && t.includes("cytatu nie ma"))).toBe(true);
+    expect(sugg.some((t) => t.includes("tytuł prawny") && t.includes("nie znaleziono w źródle"))).toBe(true);
     expect(sugg.some((t) => t.includes("art. 176 k.c.") && t.includes("nie ma w źródle"))).toBe(true);
 
     // The old textbook says 10 years, the lecture 6: a conflict, not a silent choice.
@@ -121,10 +121,12 @@ describe("pipeline with the sample note, an old textbook and an exam list", () =
     expect(queue.map((m) => m.type)).toEqual(expect.arrayContaining(["cloze", "qa", "why", "distinction"]));
     // A "Czym różni się…" card is made once for the pair, not once per topic.
     expect(queue.filter((m) => m.type === "distinction")).toHaveLength(1);
-    // At most 4 materials per topic in one pass ("lepiej mniej, a dobrze").
+    // Per topic: enough cards to cover its elements, never more than 10 in one pass.
     const perTopic = new Map<string, number>();
     for (const m of queue) perTopic.set(m.topicId, (perTopic.get(m.topicId) ?? 0) + 1);
-    for (const n of perTopic.values()) expect(n).toBeLessThanOrEqual(4);
+    for (const n of perTopic.values()) expect(n).toBeLessThanOrEqual(10);
+    // The list of premises is no longer cut off by a fixed 4-per-topic cap.
+    expect(queue.some((m) => m.type === "list")).toBe(true);
     expect(sugg.length).toBeLessThan(listSuggestions(db, s.id).length + 1);
     expect(listSuggestions(db, s.id).some((x) => x.kind === "rejected_material" && x.text.includes("999"))).toBe(true);
     // Highest exam weight first.
@@ -208,6 +210,31 @@ describe("pipeline with the sample note, an old textbook and an exam list", () =
       expect(r.verifiedShare).toBeLessThan(1);
     }
     expect(db.get<{ n: number }>("SELECT COUNT(*) AS n FROM topic")!.n).toBe(0);
+  });
+
+  it("accepts honest but inexact quotes from a sloppy model and still rejects invented ones", async () => {
+    const { db, s, ctx } = await setup();
+    setSloppy(true);
+    try {
+      await addFile(db, s.id, "wyklad-2026-10-06.md", "note", "2026-10-06");
+      await runQueue(db, ctx);
+    } finally {
+      setSloppy(false);
+    }
+    const rejectedFields = listSuggestions(db, s.id).filter((x) => x.kind === "rejected_field");
+    // Only the two planted inventions (a quote that is not in the note, art. 176 instead of 174).
+    expect(rejectedFields).toHaveLength(2);
+    expect(rejectedFields.some((x) => x.text.includes("art. 176"))).toBe(true);
+    expect(rejectedFields.some((x) => x.text.includes("tytuł prawny"))).toBe(true);
+    const fields = db.get<{ n: number }>("SELECT COUNT(*) AS n FROM topic_field")!.n;
+    expect(fields).toBeGreaterThanOrEqual(9);
+    // Every stored quote is the note's own wording, with Polish letters.
+    for (const c of db.all<{ quote: string; text: string }>("SELECT c.quote, ch.text FROM citation c JOIN source_chunk ch ON ch.id = c.chunk_id")) {
+      expect(c.text).toContain(c.quote);
+    }
+    const materials = reviewQueue(db, s.id);
+    expect(materials.length).toBeGreaterThanOrEqual(6);
+    expect(listSuggestions(db, s.id).filter((x) => x.kind === "rejected_material" && !/999|Omów/.test(x.text))).toEqual([]);
   });
 
   it("a prompt edited by the user gets its own version, so old cached answers are not reused", () => {

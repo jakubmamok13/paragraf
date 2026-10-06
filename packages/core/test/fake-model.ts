@@ -35,6 +35,18 @@ const FACTS: Fact[] = [
 
 const squash = (s: string) => s.replace(/\s+/g, " ").toLowerCase();
 
+/** Sloppy mode: quotes the way a small model often writes them (no Polish letters, a word dropped, wrong fragment label). */
+let sloppy = false;
+export const setSloppy = (on: boolean) => {
+  sloppy = on;
+};
+const mangle = (q: string) => {
+  if (!sloppy) return q;
+  const w = q.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/ł/g, "l").split(" ");
+  if (w.length > 6) w.splice(Math.floor(w.length / 2), 1);
+  return w.join(" ").replace(/§ /g, "§");
+};
+
 function extract(user: string) {
   const fragment = user.split('FRAGMENT:\n"""\n')[1]?.split('\n"""')[0] ?? "";
   const f = squash(fragment);
@@ -42,7 +54,7 @@ function extract(user: string) {
   for (const fact of FACTS) {
     if (!f.includes(squash(fact.trigger ?? fact.quote))) continue;
     if (!topics.has(fact.topic)) topics.set(fact.topic, { name: fact.topic, aliases: fact.aliases ?? [], emphasized: false, fields: [], relations: [] });
-    topics.get(fact.topic).fields.push({ type: fact.type, definition_kind: fact.kind ?? "none", text: fact.text, quote: fact.quote });
+    topics.get(fact.topic).fields.push({ type: fact.type, definition_kind: fact.kind ?? "none", text: fact.text, quote: fact.trigger ? fact.quote : mangle(fact.quote) });
   }
   const zn = topics.get("Zasiedzenie nieruchomości");
   if (zn && /ważne/i.test(fragment)) zn.emphasized = true;
@@ -82,7 +94,7 @@ function generate(user: string) {
   const materials: any[] = [];
   const blank = { question: "", answer: "", cloze_text: "", list_prompt: "", list_items: [] as string[] };
   for (const f of own) {
-    const cite = [{ chunk_id: f.chunk, quote: f.quote }];
+    const cite = [{ chunk_id: sloppy ? "C9" : f.chunk, quote: mangle(f.quote) }];
     if (f.kind === "definicja") {
       const phrase = "pierwotny sposób nabycia własności";
       const text = f.quote.includes(phrase) ? `${f.quote.replace(phrase, `{{c1::${phrase}}}`)}.` : `{{c1::${f.quote}}}`;

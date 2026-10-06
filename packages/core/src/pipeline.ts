@@ -10,7 +10,7 @@ import { AiError, chatJson, type FetchFn } from "./ai";
 import type { AiSettings } from "./settings";
 import { type Db, newId, nowIso } from "./db";
 import { type DocumentKind, DOCUMENT_KIND_LABEL, getChunk, SOURCE_RANK, sha256Hex } from "./documents";
-import { extractProvisions, locateQuote, normalizeForMatch, numbersIn, provisionKey, SearchIndex, tokenize, unsupportedFacts } from "./legal";
+import { extractProvisions, locateQuote, supportingPassage, normalizeForMatch, numbersIn, provisionKey, SearchIndex, tokenize, unsupportedFacts } from "./legal";
 import { checkMaterial, type MaterialType } from "./materials";
 import type { PromptSet } from "./prompts";
 import { getSettings } from "./settings";
@@ -248,9 +248,11 @@ export function validateExtraction(out: ExtractOutput, chunkText: string): { top
     const fields: ValidatedTopic["fields"] = [];
     for (const f of t.fields ?? []) {
       if (!FIELD_TYPES.includes(f?.type) || !f.text?.trim()) continue;
-      const loc = locateQuote(f.quote ?? "", chunkText) ?? locateQuote(f.text, chunkText);
+      // The model's quote, else its claim copied from the text, else the sentence that backs the claim.
+      const loc = locateQuote(f.quote ?? "", chunkText) ?? locateQuote(f.text, chunkText) ?? supportingPassage(f.text, chunkText);
       if (!loc) {
-        rejected.push({ topic: name, text: f.text, reason: "cytatu nie ma w źródle" });
+        const said = f.quote?.trim() ? `; cytat modelu: „${f.quote.trim().slice(0, 120)}”` : "";
+        rejected.push({ topic: name, text: f.text, reason: `nie znaleziono w źródle zdania, które to potwierdza${said}` });
         continue;
       }
       const bad = unsupportedFacts(f.text, chunkText);
@@ -695,13 +697,40 @@ export async function generateForTopic(db: Db, ctx: PipelineContext, topicId: st
       // Every quote must be found in the fragment it points to.
       const cites: { chunkId: string; quote: string; start: number; end: number }[] = [];
       for (const c of m.citations ?? []) {
-        const chunk = chunkLabel.get(String(c.chunk_id).trim()) ?? chunks.find((x) => x.id === c.chunk_id);
-        if (!chunk) continue;
-        const loc = locateQuote(c.quote ?? "", chunk.text);
-        if (loc) cites.push({ chunkId: chunk.id, quote: loc.text, start: loc.start, end: loc.end });
+        // A wrong fragment label is common with small models: then look in every fragment given.
+        const named = chunkLabel.get(String(c.chunk_id).trim()) ?? chunks.find((x) => x.id === c.chunk_id);
+        for (const chunk of named ? [named, ...chunks.filter((x) => x !== named)] : chunks) {
+          const loc = locateQuote(c.quote ?? "", chunk.text);
+          if (loc) {
+            cites.push({ chunkId: chunk.id, quote: loc.text, start: loc.start, end: loc.end });
+            break;
+          }
+        }
       }
       if (!cites.length) {
-        reject("brak cytatu ze źródła");
+        // The sentence that backs the card's answer…
+        for (const chunk of chunks) {
+          const loc = supportingPassage(text, chunk.text);
+          if (loc) {
+            cites.push({ chunkId: chunk.id, quote: loc.text, start: loc.start, end: loc.end });
+            break;
+          }
+        }
+      }
+      if (!cites.length) {
+        // …or the already verified quotes of the fields the card was made from.
+        for (const label of m.field_ids ?? []) {
+          const f = labelField.get(String(label).trim());
+          if (!f) continue;
+          const c = db.get<{ chunk_id: string; quote: string; char_start: number | null; char_end: number | null }>(
+            "SELECT chunk_id, quote, char_start, char_end FROM citation WHERE owner_type = 'topic_field' AND owner_id = ? AND verified = 1 LIMIT 1",
+            f.id,
+          );
+          if (c && chunks.some((x) => x.id === c.chunk_id)) cites.push({ chunkId: c.chunk_id, quote: c.quote, start: c.char_start ?? 0, end: c.char_end ?? 0 });
+        }
+      }
+      if (!cites.length) {
+        reject("nie znaleziono w źródle zdania, które to potwierdza");
         continue;
       }
       // Numbers and article numbers only from the cited fragments.
@@ -920,7 +949,9 @@ export async function runQueue(db: Db, ctx: PipelineContext): Promise<RunResult>
             setJob("paused");
             return { jobsDone, stoppedBy: "paused" };
           }
-          const r = await generateForTopic(db, ctx, topics[i]!, Math.min(4, budget), job.id);
+          // Enough cards to cover every element of the topic (one thing per card), within the lecture's budget.
+          const fields = db.get<{ n: number }>("SELECT COUNT(*) AS n FROM topic_field WHERE topic_id = ? AND status = 'active'", topics[i]!)!.n;
+          const r = await generateForTopic(db, ctx, topics[i]!, Math.min(budget, Math.min(10, Math.max(4, fields))), job.id);
           budget -= r.created;
           setJob("running", { done: i + 1, total });
           ctx.onProgress?.({ jobId: job.id, kind: "generate", done: i + 1, total, label });
