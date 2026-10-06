@@ -138,4 +138,24 @@ export const MIGRATIONS: string[] = [
   CREATE TABLE topic_generation (topic_id TEXT PRIMARY KEY REFERENCES topic(id) ON DELETE CASCADE,
     fields_hash TEXT NOT NULL, generated_at TEXT NOT NULL);
   `,
+  // v4: external sources, lessons, memory palace.
+  `
+  ALTER TABLE source_document ADD COLUMN url TEXT;
+  ALTER TABLE source_document ADD COLUMN meta_json TEXT;           -- ELI, DOI, authors, case number…
+
+  CREATE TABLE palace (id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT,
+    created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+  CREATE TABLE locus (id TEXT PRIMARY KEY, palace_id TEXT NOT NULL REFERENCES palace(id) ON DELETE CASCADE,
+    ord INTEGER NOT NULL, name TEXT NOT NULL, updated_at TEXT NOT NULL);
+  CREATE INDEX locus_by_palace ON locus (palace_id, ord);
+  -- One training exercise of the memory palace course (route walk, word list, legal terms…).
+  CREATE TABLE palace_drill (id TEXT PRIMARY KEY, stage INTEGER NOT NULL, kind TEXT NOT NULL,
+    palace_id TEXT, size INTEGER NOT NULL, correct INTEGER NOT NULL, duration_ms INTEGER,
+    detail_json TEXT, created_at TEXT NOT NULL);
+  -- An item of one of your lists placed at a locus, with the image you made for it.
+  CREATE TABLE palace_placement (id TEXT PRIMARY KEY, palace_id TEXT NOT NULL REFERENCES palace(id) ON DELETE CASCADE,
+    material_id TEXT NOT NULL REFERENCES material(id) ON DELETE CASCADE, item_index INTEGER NOT NULL,
+    locus_id TEXT NOT NULL REFERENCES locus(id) ON DELETE CASCADE, image TEXT NOT NULL DEFAULT '',
+    updated_at TEXT NOT NULL, UNIQUE (material_id, item_index));
+  `,
 ];

@@ -96,7 +96,10 @@ describe("analytics", () => {
     const now = new Date(2026, 9, 9, 19, 0);
     const p = subjectProgress(phone, now)[0]!;
     expect(p.mastery).toBeGreaterThan(0.3);
-    expect(p.learned).toBe(p.items);
+    // Everything but the "Odtwórz schemat" cards, which unlock in a later session.
+    const synthesis = phone.get<{ n: number }>("SELECT COUNT(*) AS n FROM review_item i JOIN material m ON m.id = i.material_id WHERE json_extract(m.payload_json, '$.synthesis') = 1")!.n;
+    expect(synthesis).toBeGreaterThan(0);
+    expect(p.learned).toBe(p.items - synthesis);
     expect(p.examDate).toBe("2027-02-10");
     expect(p.readiness!).toBeLessThan(p.mastery); // memory fades by February without more study
     expect(p.sections.map((s) => s.title)).toContain("Zasiedzenie");

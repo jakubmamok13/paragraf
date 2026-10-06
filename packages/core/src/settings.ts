@@ -10,6 +10,16 @@ export interface AiSettings {
   model: string;
 }
 
+export interface ExternalSettings {
+  /** Off by default: nothing goes to the internet unless you turn it on. */
+  enabled: boolean;
+  isapUrl: string;
+  saosUrl: string;
+  openAlexUrl: string;
+  /** Optional e-mail for OpenAlex's "polite pool" (faster, more reliable). */
+  email: string;
+}
+
 export interface Settings {
   /** Upper bound for the daily session, in minutes. */
   dailyMinutes: number;
@@ -26,6 +36,10 @@ export interface Settings {
   autoProcess: boolean;
   /** User-edited system prompts, by prompt id. */
   promptOverrides: Record<string, string>;
+  external: ExternalSettings;
+  /** Read the short lesson aloud (speech synthesis of the device). */
+  lessonAudio: boolean;
+  lessonRate: number;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -37,6 +51,15 @@ export const DEFAULT_SETTINGS: Settings = {
   ai: { provider: "ollama", baseUrl: "http://localhost:11434", model: "" },
   autoProcess: true,
   promptOverrides: {},
+  external: {
+    enabled: false,
+    isapUrl: "https://api.sejm.gov.pl",
+    saosUrl: "https://www.saos.org.pl",
+    openAlexUrl: "https://api.openalex.org",
+    email: "",
+  },
+  lessonAudio: false,
+  lessonRate: 1,
 };
 
 export const LIMITS = {
@@ -59,12 +82,15 @@ export function getSettings(db: Db): Settings {
     }
   }
   const ai = { ...DEFAULT_SETTINGS.ai, ...((stored.ai as Partial<AiSettings>) ?? {}) };
-  return { ...DEFAULT_SETTINGS, ...stored, ai } as Settings;
+  const external = { ...DEFAULT_SETTINGS.external, ...((stored.external as Partial<ExternalSettings>) ?? {}) };
+  return { ...DEFAULT_SETTINGS, ...stored, ai, external } as Settings;
 }
 
 export function updateSettings(db: Db, patch: Partial<Settings>): Settings {
   const next: Settings = { ...getSettings(db), ...patch };
   if (patch.ai) next.ai = { ...getSettings(db).ai, ...patch.ai };
+  if (patch.external) next.external = { ...getSettings(db).external, ...patch.external };
+  next.lessonRate = Math.min(1.6, Math.max(0.6, Number(next.lessonRate) || 1));
   for (const [key, range] of Object.entries(LIMITS) as [keyof typeof LIMITS, readonly [number, number]][]) {
     const v = Number(next[key]);
     if (!Number.isFinite(v)) throw new Error(`Nieprawidłowa wartość: ${key}`);

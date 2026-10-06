@@ -3,7 +3,7 @@ import { type Db, newId, nowIso } from "./db";
 import { chunkBlocks, type ParsedFile } from "./import/blocks";
 import { recordTombstone } from "./subjects";
 
-export type DocumentKind = "note" | "textbook" | "act" | "syllabus" | "exam_list";
+export type DocumentKind = "note" | "textbook" | "act" | "syllabus" | "exam_list" | "case_law" | "scholarly";
 
 export const DOCUMENT_KIND_LABEL: Record<DocumentKind, string> = {
   note: "Notatka z wykładu",
@@ -11,10 +11,12 @@ export const DOCUMENT_KIND_LABEL: Record<DocumentKind, string> = {
   act: "Tekst aktu prawnego",
   syllabus: "Sylabus",
   exam_list: "Lista zagadnień egzaminacyjnych",
+  case_law: "Orzeczenie (SAOS)",
+  scholarly: "Publikacja naukowa",
 };
 
 /** Hierarchy of sources: lower = decides (act on wording, notes on scope, textbook for depth). */
-export const SOURCE_RANK: Record<DocumentKind, number> = { act: 1, exam_list: 2, note: 2, syllabus: 3, textbook: 3 };
+export const SOURCE_RANK: Record<DocumentKind, number> = { act: 1, exam_list: 2, note: 2, syllabus: 3, textbook: 3, case_law: 3, scholarly: 4 };
 
 export async function sha256Hex(data: Uint8Array | string): Promise<string> {
   const bytes = typeof data === "string" ? new TextEncoder().encode(data) : data;
@@ -35,6 +37,9 @@ export interface ImportInput {
   lectureDate?: string | null;
   /** For kind "act": the act's abbreviation (k.c.) and the date of its legal state. */
   act?: { abbrev: string; title?: string; stateAsOf?: string | null };
+  /** Where an online source came from (ISAP, SAOS, publication). */
+  url?: string | null;
+  meta?: Record<string, unknown> | null;
 }
 
 export interface DocumentImportResult {
@@ -104,20 +109,22 @@ export async function importDocument(db: Db, input: ImportInput): Promise<Docume
     const version = (prev?.version ?? 0) + 1;
     if (prev) {
       db.run(
-        "UPDATE source_document SET title = ?, file_hash = ?, lecture_date = ?, legal_act_id = ?, version = ?, imported_at = ?, updated_at = ? WHERE id = ?",
+        "UPDATE source_document SET title = ?, file_hash = ?, lecture_date = ?, legal_act_id = ?, version = ?, url = ?, meta_json = ?, imported_at = ?, updated_at = ? WHERE id = ?",
         title,
         fileHash,
         input.lectureDate ?? null,
         actId,
         version,
+        input.url ?? null,
+        input.meta ? JSON.stringify(input.meta) : null,
         now,
         now,
         documentId,
       );
     } else {
       db.run(
-        `INSERT INTO source_document (id, subject_id, kind, title, file_name, file_hash, lecture_date, legal_act_id, version, imported_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO source_document (id, subject_id, kind, title, file_name, file_hash, lecture_date, legal_act_id, version, url, meta_json, imported_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         documentId,
         input.subjectId,
         input.kind,
@@ -127,6 +134,8 @@ export async function importDocument(db: Db, input: ImportInput): Promise<Docume
         input.lectureDate ?? null,
         actId,
         version,
+        input.url ?? null,
+        input.meta ? JSON.stringify(input.meta) : null,
         now,
         now,
       );

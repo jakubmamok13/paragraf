@@ -235,6 +235,7 @@ export function recentLectures(db: Db, now = new Date()): RecentLecture[] {
             JOIN citation ci ON ci.owner_type = 'material' AND ci.owner_id = m.id
             JOIN source_chunk ch ON ch.id = ci.chunk_id
             WHERE ch.document_id = d.id AND m.status = 'active'
+              AND COALESCE(json_extract(m.payload_json, '$.synthesis'), 0) = 0
               AND NOT EXISTS (SELECT 1 FROM review_item i WHERE i.material_id = m.id AND i.reps > 0)) AS fresh
        FROM source_document d JOIN subject s ON s.id = d.subject_id
        WHERE d.kind = 'note' AND d.lecture_date IN (?, ?) AND s.status = 'active'

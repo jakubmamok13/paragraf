@@ -158,6 +158,8 @@ export interface PlannedCard {
   isNew: boolean;
   estSeconds: number;
   priority: number;
+  /** The part of the topic this card practises (definition, premises…), null for cards without one. */
+  slot: string | null;
 }
 
 export interface SessionPlan {
@@ -190,7 +192,14 @@ export interface PlanOptions {
   budgetSeconds?: number;
   /** New materials allowed in this session instead of the daily number. */
   newLimit?: number;
+  /** Only this topic (the short lesson). */
+  topicId?: string;
+  /** Keep the order of the topic's schema instead of mixing (the first pass after a lesson). */
+  slotOrder?: boolean;
 }
+
+/** Order of the parts of a topic; kept here (not imported) to avoid a cycle with topics.ts. */
+const PART_ORDER = ["definition", "basis", "premise", "element", "effect", "exception", "deadline", "case_law", "doctrine", "ratio"];
 
 interface CandidateRow extends ItemRow {
   type: MaterialType;
@@ -280,12 +289,30 @@ export function planSession(db: Db, now = new Date(), opts: PlanOptions = {}): S
        AND (i.buried_until IS NULL OR i.buried_until <= ?)
        AND m.type IN (${SESSION_TYPES.map(() => "?").join(", ")})
        ${opts.subjectId ? "AND s.id = ?" : ""}
+       ${opts.topicId ? "AND t.id = ?" : ""}
        ${opts.documentId ? "AND m.id IN (SELECT ci.owner_id FROM citation ci JOIN source_chunk ch ON ch.id = ci.chunk_id WHERE ci.owner_type = 'material' AND ch.document_id = ?)" : ""}`,
     nowIso,
     ...SESSION_TYPES,
     ...(opts.subjectId ? [opts.subjectId] : []),
+    ...(opts.topicId ? [opts.topicId] : []),
     ...(opts.documentId ? [opts.documentId] : []),
   );
+
+  // The part of the topic of each material: the earliest part among its fields.
+  const slotOf = new Map<string, string>();
+  for (const r of db.all<{ material_id: string; field_type: string }>(
+    "SELECT mf.material_id, f.field_type FROM material_field mf JOIN topic_field f ON f.id = mf.topic_field_id",
+  )) {
+    const prev = slotOf.get(r.material_id);
+    if (!prev || PART_ORDER.indexOf(r.field_type) < PART_ORDER.indexOf(prev)) slotOf.set(r.material_id, r.field_type);
+  }
+  // "Odtwórz schemat" waits until every other card of its topic has been answered at least once.
+  const synthesisReady = (topicId: string) =>
+    !db.get(
+      `SELECT 1 FROM material m WHERE m.topic_id = ? AND m.status = 'active' AND COALESCE(json_extract(m.payload_json, '$.synthesis'), 0) = 0
+       AND NOT EXISTS (SELECT 1 FROM review_item i WHERE i.material_id = m.id AND i.reps > 0)`,
+      topicId,
+    );
 
   const toPlanned = (r: CandidateRow, priority: number): PlannedCard => {
     const isNew = r.state === State.New;
@@ -303,6 +330,7 @@ export function planSession(db: Db, now = new Date(), opts: PlanOptions = {}): S
       isNew,
       estSeconds: Math.round(isNew ? base * NEW_COST_FACTOR : base),
       priority,
+      slot: slotOf.get(r.material_id) ?? null,
     };
   };
 
@@ -337,6 +365,7 @@ export function planSession(db: Db, now = new Date(), opts: PlanOptions = {}): S
   const fresh = new Map<string, CandidateRow>();
   for (const r of rows) {
     if (r.state !== State.New || r.subject_status !== "active") continue;
+    if (r.payload_json.includes('"synthesis":true') && !synthesisReady(r.topic_id)) continue;
     // Only the first gap of a new cloze today; the others follow on later days.
     const prev = fresh.get(r.material_id);
     if (!prev || r.sub_key.localeCompare(prev.sub_key, undefined, { numeric: true }) < 0) fresh.set(r.material_id, r);
@@ -371,8 +400,15 @@ export function planSession(db: Db, now = new Date(), opts: PlanOptions = {}): S
     }
   }
 
+  const ordered = opts.slotOrder
+    ? [...reviews, ...added].sort(
+        (a, b) =>
+          (a.payload?.synthesis ? 1 : 0) - (b.payload?.synthesis ? 1 : 0) ||
+          (a.slot ? PART_ORDER.indexOf(a.slot) : 99) - (b.slot ? PART_ORDER.indexOf(b.slot) : 99),
+      )
+    : arrange(reviews, added, settings.interleaveSubjects, examDays);
   return {
-    cards: arrange(reviews, added, settings.interleaveSubjects, examDays),
+    cards: ordered,
     budgetSeconds,
     estSeconds: used,
     studiedTodaySeconds,

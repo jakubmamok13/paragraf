@@ -14,6 +14,7 @@ import { extractProvisions, locateQuote, supportingPassage, normalizeForMatch, n
 import { checkMaterial, type MaterialType } from "./materials";
 import type { PromptSet } from "./prompts";
 import { getSettings } from "./settings";
+import { ensureSynthesis } from "./topics";
 
 export interface PipelineContext {
   prompts: PromptSet;
@@ -549,7 +550,7 @@ export function recomputeWeights(db: Db, subjectId: string): void {
         t.on_exam_list === 1 ? 0.5 : 0,
         notes ? Math.min(0.9, 0.5 + 0.1 * (notes - 1) + (t.emphasis > 0 ? 0.2 : 0)) : 0,
         kinds.has("act") ? 0.3 : 0,
-        kinds.has("textbook") ? 0.2 : 0,
+        kinds.has("textbook") || kinds.has("case_law") || kinds.has("scholarly") ? 0.2 : 0,
       );
       db.run("UPDATE topic SET exam_weight = ? WHERE id = ?", Math.round(w * 100) / 100, t.id);
     }
@@ -780,6 +781,8 @@ export async function generateForTopic(db: Db, ctx: PipelineContext, topicId: st
       now,
     );
   });
+  // The synthesis card is made from verified fields, without the model.
+  ensureSynthesis(db, topicId);
   return { created, rejected };
 }
 

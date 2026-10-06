@@ -42,7 +42,8 @@ const CONTENT_TABLES = [
   "material",
   "material_field",
 ] as const;
-const PROGRESS_TABLES = ["review_item", "review_log"] as const;
+// The memory palace course happens on the phone, so it travels with the progress.
+const PROGRESS_TABLES = ["review_item", "review_log", "palace", "locus", "palace_drill", "palace_placement"] as const;
 const BACKUP_TABLES = ["setting", ...CONTENT_TABLES, ...PROGRESS_TABLES, "ai_call"] as const;
 
 const TABLES: Record<PackageKind, readonly string[]> = {
