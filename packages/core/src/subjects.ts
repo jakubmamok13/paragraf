@@ -37,6 +37,8 @@ export interface SubjectInput {
   exams: ExamInput[];
   targetRetention?: number | null;
   dailyNewLimit?: number | null;
+  /** Make "Który przepis reguluje…?" cards (only for provisions worth knowing by heart). */
+  learnArticleNumbers?: boolean;
 }
 
 export interface Subject {
@@ -45,6 +47,7 @@ export interface Subject {
   status: SubjectStatus;
   targetRetention: number | null;
   dailyNewLimit: number | null;
+  learnArticleNumbers: boolean;
   exams: Exam[];
   /** The nearest exam that has not happened yet, if any. */
   nextExam: Exam | null;
@@ -82,11 +85,12 @@ export function createSubject(db: Db, input: SubjectInput): Subject {
   const now = nowIso();
   db.tx(() => {
     db.run(
-      "INSERT INTO subject (id, name, target_retention, daily_new_limit, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+      "INSERT INTO subject (id, name, target_retention, daily_new_limit, learn_article_numbers, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
       id,
       input.name.trim(),
       input.targetRetention ?? null,
       input.dailyNewLimit ?? null,
+      input.learnArticleNumbers ? 1 : 0,
       now,
       now,
     );
@@ -100,10 +104,11 @@ export function updateSubject(db: Db, id: string, input: SubjectInput): Subject 
   if (!getSubject(db, id)) throw new Error("Nie ma takiego przedmiotu.");
   db.tx(() => {
     db.run(
-      "UPDATE subject SET name = ?, target_retention = ?, daily_new_limit = ?, updated_at = ? WHERE id = ?",
+      "UPDATE subject SET name = ?, target_retention = ?, daily_new_limit = ?, learn_article_numbers = ?, updated_at = ? WHERE id = ?",
       input.name.trim(),
       input.targetRetention ?? null,
       input.dailyNewLimit ?? null,
+      input.learnArticleNumbers ? 1 : 0,
       nowIso(),
       id,
     );
@@ -188,6 +193,7 @@ export function getSubject(db: Db, id: string, today = localToday()): Subject | 
     status: r.status,
     targetRetention: r.target_retention,
     dailyNewLimit: r.daily_new_limit,
+    learnArticleNumbers: !!r.learn_article_numbers,
     exams,
     nextExam: exams.find((e) => e.date !== null && e.date >= today) ?? null,
     createdAt: r.created_at,

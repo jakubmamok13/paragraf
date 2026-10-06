@@ -22,3 +22,4 @@ apps/web/dist/
 
 # Test files written for this project (no personal data)
 !packages/core/test/fixtures/**
+e2e/out/

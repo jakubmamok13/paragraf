@@ -1,5 +1,4 @@
 import { strFromU8, unzipSync } from "fflate";
-import mammoth from "mammoth";
 import type { Block } from "./blocks";
 import { decodeEntities, htmlTitle, parseHtml } from "./html";
 
@@ -9,6 +8,8 @@ export async function parseDocx(bytes: Uint8Array): Promise<Block[]> {
   const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
   // mammoth maps Word heading styles to h1–h6, so the structure survives.
   const input = typeof Buffer !== "undefined" ? { buffer: Buffer.from(bytes) } : { arrayBuffer: buffer };
+  // Loaded on demand: only the laptop imports Word files.
+  const mammoth = (await import("mammoth")).default;
   const { value } = await mammoth.convertToHtml(input as any);
   return parseHtml(value);
 }

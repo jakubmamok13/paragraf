@@ -150,7 +150,8 @@ export function topicNames(db: Db, subjectId: string): string[] {
   return db.all<{ name: string }>("SELECT name FROM topic WHERE subject_id = ? ORDER BY name COLLATE NOCASE", subjectId).map((r) => r.name);
 }
 
-export interface SourceRef {
+export interface MaterialSource {
+  chunkId: string;
   quote: string;
   documentTitle: string;
   documentKind: string;
@@ -159,13 +160,13 @@ export interface SourceRef {
 }
 
 /** Where a material comes from, for "show source" (empty for cards added by hand). */
-export function materialSources(db: Db, materialId: string): SourceRef[] {
+export function materialSources(db: Db, materialId: string): MaterialSource[] {
   return db
     .all(
-      `SELECT c.quote, d.title, d.kind, ch.page_from, d.lecture_date FROM citation c
+      `SELECT c.chunk_id, c.quote, d.title, d.kind, ch.page_from, d.lecture_date FROM citation c
        JOIN source_chunk ch ON ch.id = c.chunk_id JOIN source_document d ON d.id = ch.document_id
        WHERE c.owner_type = 'material' AND c.owner_id = ? ORDER BY ch.ord`,
       materialId,
     )
-    .map((r) => ({ quote: r.quote, documentTitle: r.title, documentKind: r.kind, page: r.page_from, lectureDate: r.lecture_date }));
+    .map((r) => ({ chunkId: r.chunk_id, quote: r.quote, documentTitle: r.title, documentKind: r.kind, page: r.page_from, lectureDate: r.lecture_date }));
 }

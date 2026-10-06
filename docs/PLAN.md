@@ -27,7 +27,10 @@
 | D-12 | Planer: budżet czasu z mediany Twoich czasów odpowiedzi; zaległe powtórki według priorytetu (waga × szansa zapomnienia × bliskość egzaminu); nowe materiały wstrzymane, dopóki są zaległości; jedna luka z danego tekstu dziennie; sąsiednie fiszki z różnych zagadnień. | Kryteria MVP: limit czasu i poprawny harmonogram po przerwie (test: 300 fiszek, 5 dni przerwy). |
 | D-13 | Dzień nauki kończy się o 4:00. Przedmiot w podtrzymaniu: retencja 0,8, bez nowych materiałów. Fiszka nieudana 3 razy w jednej sesji czeka do następnej. | Nauka późnym wieczorem liczy się do „dziś”; brak pętli bez końca. |
 | D-14 | Własne fiszki (pytanie, luki, wyliczenie) można dodać ręcznie; nie wymagają źródła, bo są Twoje. | Nauka może ruszyć przed Pracownią. |
-| D-10 | sql.js nie ma FTS5. Wyszukiwanie w źródłach: FTS4 z rankingiem BM25 liczonym w JS albo indeks w JS; rozstrzygnięcie w kroku 5 | Sprawdzone w kroku 1. |
+| D-10 | sql.js nie ma FTS5: wyszukiwanie w źródłach to BM25 w JS z obcinaniem końcówek (polska fleksja). | Sprawdzone w kroku 1, rozwiązane w kroku 5. |
+| D-15 | Bez osobnego kroku „classify-chunks”: ekstrakcja zwraca pustą listę dla fragmentu bez treści. Krytyk materiałów jest deterministyczny (kod), nie drugim wywołaniem modelu. | Lokalny model jest wolny: mniej wywołań, te same gwarancje. |
+| D-16 | Sprzeczność = to samo zdanie (≥80% wspólnych słów) z innymi liczbami lub przepisami, z różnych dokumentów. Spory doktrynalne bez liczb nie są jeszcze wykrywane. | Mało fałszywych alarmów (20 lat w dobrej wierze vs 30 w złej to nie sprzeczność). |
+| D-17 | Lista zagadnień egzaminacyjnych i sylabus nie idą do AI: każda pozycja jest dopasowywana do zagadnienia albo staje się zagadnieniem bez materiałów (widać je w „Czego uczyć się dziś”). | Szybko i bez zmyśleń. |
 
 ## Hierarchia źródeł
 
@@ -68,15 +71,15 @@ Schemat: [`packages/core/src/schema.ts`](../packages/core/src/schema.ts). Najwa�
 1. ✅ Repozytorium i szkielet: baza z migracjami, przedmioty i egzaminy, ustawienia, paczki, klient lokalnego AI i test połączenia.
 2. ✅ Przedmioty i egzaminy (dodawanie, edycja, archiwum, podtrzymanie, usuwanie), ustawienia czasu nauki. Zrobione razem z krokiem 1.
 3. ✅ FSRS i sesja na telefonie: pewność jako odsłonięcie odpowiedzi, budżet czasu, test kilkudniowej przerwy, cofanie odpowiedzi, kalibracja po sesji, własne fiszki.
-4. Import: TXT, MD, DOCX, ODT, RTF, HTML, `.pages` (podgląd PDF); fragmenty z hashami.
-5. Import PDF i EPUB z numerami stron; indeks wyszukiwania i indeks przepisów.
-6. Porównanie modeli na prawdziwej notatce, wybór domyślnego.
-7. Pipeline: ekstrakcja, scalanie, konflikty, walidator cytatów; kolejka przetwarzania z wznawianiem.
-8. Generator (qa, cloze, list) z krytykiem.
-9. Kolejka zatwierdzania, podgląd źródła, ekran konfliktów.
-10. Paczki: przegląd po pierwszym prawdziwym użyciu, kompresja dużych paczek.
-11. Sesja po wykładzie i podstawowa analityka.
-12. Test end-to-end na jednym prawdziwym przedmiocie.
+4. ✅ Import: TXT, MD, DOCX, ODT, RTF (też Windows-1250), HTML, `.pages` (podgląd PDF); fragmenty z hashami, ponowny import przyrostowy.
+5. ✅ Import PDF (nagłówki z rozmiaru czcionki, bez żywej paginy, drukowane numery stron) i EPUB; wyszukiwarka BM25, rozpoznawanie przepisów i liczb słownie.
+6. ✅ Narzędzie „Porównaj modele” (czas, odsetek treści potwierdzonych cytatem). Wybór modelu należy do Ciebie, na prawdziwej notatce.
+7. ✅ Pipeline: ekstrakcja, scalanie, konflikty, walidator cytatów i faktów; kolejka z wznawianiem; listy zagadnień bez AI; wagi egzaminacyjne.
+8. ✅ Generator (pytanie, luki, wyliczenie, odróżnij, dlaczego, przepis – ten tylko po włączeniu) z deterministycznym krytykiem.
+9. ✅ Kolejka zatwierdzania, podgląd źródła jednym kliknięciem, ekran sprzeczności, sugestie, fiszki zgłoszone z telefonu.
+10. ✅ Paczki skompresowane (gzip); scalanie postępu, gdy oba urządzenia mają jednostki tej samej fiszki.
+11. ✅ Sesja po wykładzie, tryb przedmiotu, analityka: opanowanie, czego uczyć się dziś, gotowość, kalibracja, najtrudniejsze fiszki, passa.
+12. ✅ Test end-to-end (`npm run e2e`) na przykładowym przedmiocie z atrapą modelu. **Do zrobienia przez Ciebie:** pierwszy przedmiot z prawdziwymi notatkami i prawdziwym modelem.
 
 v2: kazusy z oceną AI, pytania ustne, tryb „odróżnij”, planer egzaminacyjny, mapa przedmiotu.
 v3: OCR odręcznych notatek, odpowiedzi głosowe, symulacja egzaminu, ISAP, eksport do Anki.

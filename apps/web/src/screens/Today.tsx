@@ -1,7 +1,7 @@
-import { daysBetween, EXAM_FORMATS, EXAM_KINDS, listSubjects, localToday, planSession, type SessionPlan } from "@paragraf/core";
+import { daysBetween, EXAM_FORMATS, EXAM_KINDS, listSubjects, localToday, planSession, recentLectures, type SessionPlan } from "@paragraf/core";
 import { Card, plDays, useDb } from "../ui";
 
-export function Today({ goTo, onStart }: { goTo: (tab: "subjects" | "workshop") => void; onStart: (plan: SessionPlan) => void }) {
+export function Today({ goTo, onStart }: { goTo: (tab: "subjects" | "workshop") => void; onStart: (plan: SessionPlan, mode?: string) => void }) {
   const { db } = useDb();
   const plan = planSession(db);
   const subjects = listSubjects(db);
@@ -10,6 +10,7 @@ export function Today({ goTo, onStart }: { goTo: (tab: "subjects" | "workshop") 
   const upcoming = subjects.filter((s) => s.nextExam).slice(0, 3);
   const minutes = Math.max(1, Math.ceil(plan.estSeconds / 60));
   const hasCards = plan.cards.length > 0;
+  const lectures = recentLectures(db);
 
   let note: string;
   if (active === 0) note = "Nie masz jeszcze materiałów do nauki.";
@@ -31,6 +32,23 @@ export function Today({ goTo, onStart }: { goTo: (tab: "subjects" | "workshop") 
         </button>
         <p className="hero-note">{note}</p>
       </section>
+
+      {lectures.map((l) => (
+        <Card key={l.documentId} title="Po wykładzie">
+          <p className="small">
+            <strong>{l.title}</strong> <span className="muted">· {l.subjectName}</span>
+          </p>
+          <p className="muted small">
+            Nowe materiały: {l.fresh}. Pierwsze przywołanie tego samego dnia najmocniej utrwala wykład.
+          </p>
+          <button
+            className="btn btn-primary"
+            onClick={() => onStart(planSession(db, new Date(), { documentId: l.documentId, budgetSeconds: 10 * 60, newLimit: 50, ignoreStudiedToday: true }), "after_lecture")}
+          >
+            Krótki test (do 10 min)
+          </button>
+        </Card>
+      ))}
 
       {plan.deferred > 0 && (
         <Card title="Zaległości">

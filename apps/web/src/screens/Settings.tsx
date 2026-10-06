@@ -1,25 +1,26 @@
 import { useState } from "react";
 import {
   type Db,
+  decodePackage,
+  encodePackage,
   exportPackage,
   getSettings,
   importPackage,
   LIMITS,
   packageFileName,
-  parsePackage,
   type Settings as S,
   updateSettings,
 } from "@paragraf/core";
 import { Card, Field, useAction, useDb, useToast } from "../ui";
-import { pickTextFile, saveFile } from "../runtime";
+import { BUNDLED_PROMPTS, pickFiles, saveFile } from "../runtime";
 
 const KIND_LABEL = { content: "treść", progress: "postęp nauki", backup: "pełna kopia" } as const;
 
 export async function importFromPicker(db: Db, toast: (t: string, k?: "ok" | "error") => void, changed: () => void): Promise<void> {
-  const text = await pickTextFile();
-  if (text === null) return;
+  const [file] = await pickFiles(".gz,.json,application/gzip,application/json");
+  if (!file) return;
   try {
-    const pkg = parsePackage(text);
+    const pkg = decodePackage(file.bytes);
     if (
       pkg.kind === "backup" &&
       !confirm("To pełna kopia. Wczytanie ZASTĄPI wszystkie dane na tym urządzeniu (przedmioty, materiały, postęp). Kontynuować?")
@@ -95,20 +96,87 @@ export function Settings() {
           </button>
           <button
             className="btn btn-secondary"
-            onClick={() => void act(() => saveFile(packageFileName("progress"), JSON.stringify(exportPackage(db, "progress"))))}
+            onClick={() => void act(() => saveFile(packageFileName("progress"), encodePackage(exportPackage(db, "progress"))))}
           >
             Wyślij postęp na komputer
           </button>
           <button
             className="btn btn-secondary"
-            onClick={() => void act(() => saveFile(packageFileName("backup"), JSON.stringify(exportPackage(db, "backup"))))}
+            onClick={() => void act(() => saveFile(packageFileName("backup"), encodePackage(exportPackage(db, "backup"))))}
           >
             Eksportuj pełną kopię
           </button>
         </div>
       </Card>
 
+      <Card title="Pracownia (komputer)">
+        <label className="check">
+          <input type="checkbox" checked={s.autoProcess} onChange={(e) => void act(() => updateSettings(db, { autoProcess: e.target.checked }))} />
+          Przetwarzaj wczytane pliki od razu
+        </label>
+        <PromptEditor />
+      </Card>
+
       <p className="muted small center">Paragraf {__APP_VERSION__} · schemat bazy v{db.schemaVersion}</p>
     </div>
+  );
+}
+
+const PROMPT_NAMES: Record<string, string> = {
+  "extract-topics": "Ekstrakcja zagadnień",
+  "merge-topics": "Scalanie zagadnień",
+  "generate-materials": "Generowanie materiałów",
+};
+
+/** System prompts are plain text: you can tune them. A changed prompt is a new version; old AI answers are not reused. */
+function PromptEditor() {
+  const { db } = useDb();
+  const act = useAction();
+  const overrides = getSettings(db).promptOverrides;
+  const [open, setOpen] = useState<string | null>(null);
+  const [text, setText] = useState("");
+  return (
+    <details>
+      <summary>Prompty AI (zaawansowane)</summary>
+      <p className="muted small">Instrukcje dla lokalnego modelu. Zasady o cytatach i zakazie dopisywania numerów artykułów i tak sprawdza aplikacja.</p>
+      {Object.values(BUNDLED_PROMPTS).map((p) => (
+        <div key={p.id} className="prompt">
+          <div className="list-row">
+            <span className="small">
+              {PROMPT_NAMES[p.id] ?? p.id} {overrides[p.id] ? <span className="pill">zmieniony</span> : null}
+            </span>
+            <button
+              className="btn btn-ghost btn-small"
+              onClick={() => {
+                setOpen(open === p.id ? null : p.id);
+                setText(overrides[p.id] ?? p.system);
+              }}
+            >
+              {open === p.id ? "Zamknij" : "Edytuj"}
+            </button>
+          </div>
+          {open === p.id && (
+            <>
+              <textarea className="prompt-text" rows={14} value={text} onChange={(e) => setText(e.target.value)} />
+              <div className="row-wrap">
+                <button className="btn btn-primary btn-small" onClick={() => void act(() => updateSettings(db, { promptOverrides: { ...overrides, [p.id]: text } }), "Zapisano prompt.")}>
+                  Zapisz
+                </button>
+                <button
+                  className="btn btn-ghost btn-small"
+                  onClick={() => {
+                    const { [p.id]: _drop, ...rest } = overrides;
+                    setText(p.system);
+                    void act(() => updateSettings(db, { promptOverrides: rest }), "Przywrócono domyślny.");
+                  }}
+                >
+                  Przywróć domyślny
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      ))}
+    </details>
   );
 }

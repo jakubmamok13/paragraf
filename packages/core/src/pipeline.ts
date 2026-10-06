@@ -625,8 +625,14 @@ export async function generateForTopic(db: Db, ctx: PipelineContext, topicId: st
   const chunkLabel = new Map(chunks.map((c, i) => [`C${i + 1}`, c]));
   const labelOfChunk = new Map(chunks.map((c, i) => [c.id, `C${i + 1}`]));
 
+  // Already made for this topic, plus "Czym różni się…" made from the other side of a pair.
   const existing = db
-    .all<{ type: MaterialType; payload_json: string }>("SELECT type, payload_json FROM material WHERE topic_id = ?", topicId)
+    .all<{ type: MaterialType; payload_json: string }>(
+      `SELECT type, payload_json FROM material WHERE topic_id = ?
+       ${related.length ? `UNION ALL SELECT type, payload_json FROM material WHERE type = 'distinction' AND topic_id IN (${related.map(() => "?").join(", ")})` : ""}`,
+      topicId,
+      ...related.map((t) => t.id),
+    )
     .map((m) => materialText(m.type, JSON.parse(m.payload_json)));
 
   const describe = (f: FieldRow) => {

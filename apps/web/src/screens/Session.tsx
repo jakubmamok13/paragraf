@@ -4,6 +4,7 @@ import {
   type CalibrationRow,
   type Confidence,
   CONFIDENCE_LABEL,
+  flagMaterial,
   type Grade,
   listRating,
   MATERIAL_LABEL,
@@ -16,7 +17,8 @@ import {
   type SessionPlan,
   undoAnswer,
 } from "@paragraf/core";
-import { useAction, useDb } from "../ui";
+import { useAction, useDb, useToast } from "../ui";
+import { type SourceRef, SourceViewer } from "../components";
 
 type Phase = "question" | "list" | "answer";
 
@@ -34,9 +36,11 @@ interface Last {
   requeuedAt: number | null;
 }
 
-export function Session({ plan, onClose }: { plan: SessionPlan; onClose: () => void }) {
+export function Session({ plan, mode = "daily", onClose }: { plan: SessionPlan; mode?: string; onClose: () => void }) {
   const { db } = useDb();
   const act = useAction();
+  const toast = useToast();
+  const [viewer, setViewer] = useState<SourceRef | null>(null);
   const [queue, setQueue] = useState<PlannedCard[]>(plan.cards);
   const [index, setIndex] = useState(0);
   const [phase, setPhase] = useState<Phase>("question");
@@ -80,7 +84,7 @@ export function Session({ plan, onClose }: { plan: SessionPlan; onClose: () => v
           rating: grade,
           confidence,
           durationMs: Date.now() - cardStart.current,
-          mode: "daily",
+          mode,
           ...(card.type === "list" ? { answer: { recalled } } : {}),
         });
         setLogIds((ids) => [...ids, res.logId]);
@@ -104,6 +108,19 @@ export function Session({ plan, onClose }: { plan: SessionPlan; onClose: () => v
     },
     [act, card, confidence, db, index, plan.budgetSeconds, queue, recalled],
   );
+
+  /** Wrong or outdated card: it stops coming up and waits on the laptop for a fix. */
+  const flag = () => {
+    if (!card) return;
+    void act(() => {
+      flagMaterial(db, card.materialId);
+      const next = queue.filter((c, i) => i <= index || c.materialId !== card.materialId);
+      next.splice(index, 1);
+      setQueue(next);
+      if (index >= next.length) setFinished("done");
+      toast("Zgłoszono. Popraw albo odrzuć ją w Pracowni po przesłaniu postępu.");
+    });
+  };
 
   const undo = () => {
     if (!last) return;
@@ -191,9 +208,14 @@ export function Session({ plan, onClose }: { plan: SessionPlan; onClose: () => v
 
         {phase === "answer" && (
           <div className="source">
-            <button className="link small" onClick={() => setShowSource((v) => !v)}>
-              {showSource ? "Ukryj źródło" : "Pokaż źródło"}
-            </button>
+            <div className="source-links">
+              <button className="link small" onClick={() => setShowSource((v) => !v)}>
+                {showSource ? "Ukryj źródło" : "Pokaż źródło"}
+              </button>
+              <button className="link small flag" onClick={flag}>
+                ⚑ Zgłoś błąd
+              </button>
+            </div>
             {showSource &&
               (sources.length ? (
                 sources.map((s, i) => (
@@ -202,7 +224,10 @@ export function Session({ plan, onClose }: { plan: SessionPlan; onClose: () => v
                     <footer className="muted small">
                       {s.documentTitle}
                       {s.page ? `, s. ${s.page}` : ""}
-                      {s.lectureDate ? `, wykład ${s.lectureDate}` : ""}
+                      {s.lectureDate ? `, wykład ${s.lectureDate}` : ""} ·{" "}
+                      <button className="link small" onClick={() => setViewer({ chunkId: s.chunkId, quote: s.quote })}>
+                        cały fragment
+                      </button>
                     </footer>
                   </blockquote>
                 ))
@@ -213,6 +238,7 @@ export function Session({ plan, onClose }: { plan: SessionPlan; onClose: () => v
         )}
       </div>
 
+      {viewer && <SourceViewer source={viewer} onClose={() => setViewer(null)} />}
       <footer className="session-actions">
         {phase === "question" && (
           <>

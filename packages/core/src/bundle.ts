@@ -122,6 +122,10 @@ export function importPackage(db: Db, pkg: Package): ImportResult {
       );
     }
 
+    // Review items are one per (material, gap). Both devices may have made one for the same
+    // card with different ids: the one reviewed later wins, and answers move to it.
+    const itemRemap = new Map<string, string>();
+
     for (const table of TABLES[pkg.kind]) {
       const rows = pkg.tables[table];
       if (!rows?.length) continue;
@@ -138,7 +142,40 @@ export function importPackage(db: Db, pkg: Package): ImportResult {
           (fk) => row[fk.from] != null && !db.get(`SELECT 1 FROM ${fk.table} WHERE ${fk.to} = ?`, row[fk.from]),
         );
 
-      for (const row of rows) {
+      for (const original of rows) {
+        let row = original;
+        if (table === "review_log" && itemRemap.has(String(row.review_item_id))) {
+          row = { ...row, review_item_id: itemRemap.get(String(row.review_item_id)) };
+        }
+        if (table === "review_item") {
+          const twin = db.get<{ id: string; last_review: string | null; updated_at: string; suspended: number; reps: number }>(
+            "SELECT id, last_review, updated_at, suspended, reps FROM review_item WHERE material_id = ? AND sub_key = ? AND id != ?",
+            row.material_id,
+            row.sub_key ?? "",
+            row.id,
+          );
+          if (twin) {
+            // Later review first; on a tie, the one that carries something (a flag, reviews), then the newer one.
+            const key = (r: { last_review?: unknown; suspended?: unknown; reps?: unknown; updated_at?: unknown }) =>
+              [String(r.last_review ?? ""), Number(r.suspended ?? 0), Number(r.reps ?? 0), String(r.updated_at ?? "")] as const;
+            const a = key(row);
+            const b = key(twin);
+            const incomingWins = a[0] !== b[0] ? a[0] > b[0] : a[1] !== b[1] ? a[1] > b[1] : a[2] !== b[2] ? a[2] > b[2] : a[3] > b[3];
+            if (!incomingWins) {
+              itemRemap.set(String(row.id), twin.id);
+              result.skipped++;
+              continue;
+            }
+            // Make room for the incoming row, move the answers to it, then drop the local twin.
+            db.run("UPDATE review_item SET sub_key = ? WHERE id = ?", `~merging~${twin.id}`, twin.id);
+            const use = cols.filter((c) => c in row);
+            db.run(`INSERT INTO review_item (${use.join(", ")}) VALUES (${use.map(() => "?").join(", ")})`, ...use.map((c) => row[c]));
+            db.run("UPDATE review_log SET review_item_id = ? WHERE review_item_id = ?", row.id, twin.id);
+            db.run("DELETE FROM review_item WHERE id = ?", twin.id);
+            result.updated++;
+            continue;
+          }
+        }
         // Columns this version knows; an older package may lack new ones.
         const use = cols.filter((c) => c in row);
         if (pk.some((k) => !use.includes(k))) {

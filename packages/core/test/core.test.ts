@@ -196,6 +196,47 @@ describe("packages", () => {
     expect(importPackage(laptop, exportPackage(phone, "progress")).inserted).toBe(0);
   });
 
+  it("merges review state when both devices made items for the same material (different ids)", () => {
+    const laptop = freshDb();
+    const phone = freshDb();
+    const s = createSubject(laptop, { name: "Prawo cywilne", exams: [] });
+    const { materialId, itemId } = seedLearning(laptop, s.id);
+    laptop.run("DELETE FROM review_item");
+    importPackage(phone, exportPackage(laptop, "content"));
+    // The laptop opened "Dziś": it made its own, never-studied item for the material.
+    laptop.run("INSERT INTO review_item (id, material_id, sub_key, due, updated_at) VALUES ('laptop-item', ?, '', '2026-10-01', '2026-10-01T00:00:00Z')", materialId);
+    // The phone studied with its item.
+    phone.run("INSERT INTO review_item (id, material_id, due, reps, last_review, updated_at) VALUES (?, ?, '2026-10-09', 2, '2026-10-06T09:00:00Z', '2026-10-06T09:00:00Z')", itemId, materialId);
+    phone.run("INSERT INTO review_log (id, review_item_id, ts, rating, mode) VALUES (?, ?, '2026-10-06T09:00:00Z', 3, 'daily')", newId(), itemId);
+
+    importPackage(laptop, exportPackage(phone, "progress"));
+    expect(laptop.all("SELECT id, reps FROM review_item")).toEqual([{ id: itemId, reps: 2 }]);
+    expect(laptop.get<{ n: number }>("SELECT COUNT(*) AS n FROM review_log WHERE review_item_id = ?", itemId)!.n).toBe(1);
+
+    // A card flagged on the phone (never answered) beats a newer, empty item made on the laptop.
+    const t = "2026-10-01T10:00:00.000Z";
+    const m2 = newId();
+    laptop.run("INSERT INTO material (id, topic_id, type, payload_json, status, created_at, updated_at) VALUES (?, (SELECT id FROM topic), 'qa', '{\"q\":\"a\",\"a\":\"b\"}', 'active', ?, ?)", m2, t, t);
+    importPackage(phone, exportPackage(laptop, "content"));
+    phone.run("INSERT INTO review_item (id, material_id, due, suspended, updated_at) VALUES ('phone-m2', ?, ?, 1, '2026-10-06T10:00:00Z')", m2, t);
+    laptop.run("INSERT INTO review_item (id, material_id, due, updated_at) VALUES ('laptop-m2', ?, ?, '2026-10-07T10:00:00Z')", m2, t);
+    importPackage(laptop, exportPackage(phone, "progress"));
+    expect(laptop.get("SELECT id, suspended FROM review_item WHERE material_id = ?", m2)).toEqual({ id: "phone-m2", suspended: 1 });
+    laptop.run("DELETE FROM review_item WHERE material_id = ?", m2);
+    phone.run("DELETE FROM review_item WHERE material_id = ?", m2);
+
+    // Both studied: the later review wins and no history is lost.
+    laptop.raw.exec("PRAGMA foreign_keys = OFF");
+    laptop.run("UPDATE review_item SET id = 'laptop-item2' WHERE id = ?", itemId);
+    laptop.run("UPDATE review_log SET review_item_id = 'laptop-item2'");
+    laptop.raw.exec("PRAGMA foreign_keys = ON");
+    laptop.run("UPDATE review_item SET reps = 7, last_review = '2026-10-08T09:00:00Z', updated_at = '2026-10-08T09:00:00Z'");
+    phone.run("INSERT INTO review_log (id, review_item_id, ts, rating, mode) VALUES (?, ?, '2026-10-07T09:00:00Z', 4, 'daily')", newId(), itemId);
+    importPackage(laptop, exportPackage(phone, "progress"));
+    expect(laptop.all("SELECT id, reps FROM review_item")).toEqual([{ id: "laptop-item2", reps: 7 }]);
+    expect(laptop.get<{ n: number }>("SELECT COUNT(*) AS n FROM review_log")!.n).toBe(2);
+  });
+
   it("content package carries only cited source fragments unless asked for all", () => {
     const db = freshDb();
     const s = createSubject(db, { name: "Prawo cywilne", exams: [] });

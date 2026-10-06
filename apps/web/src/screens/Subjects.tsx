@@ -84,6 +84,7 @@ function SubjectForm({ subject, onDone }: { subject: Subject | null; onDone: () 
   );
   const [retention, setRetention] = useState(subject?.targetRetention != null ? String(subject.targetRetention) : "");
   const [adding, setAdding] = useState(false);
+  const [learnArticles, setLearnArticles] = useState(subject?.learnArticleNumbers ?? false);
 
   const setExam = (i: number, patch: Partial<ExamInput>) => setExams((xs) => xs.map((x, j) => (j === i ? { ...x, ...patch } : x)));
 
@@ -93,6 +94,7 @@ function SubjectForm({ subject, onDone }: { subject: Subject | null; onDone: () 
         name,
         exams,
         targetRetention: retention ? Number(retention.replace(",", ".")) : null,
+        learnArticleNumbers: learnArticles,
       };
       if (subject) updateSubject(db, subject.id, input);
       else createSubject(db, input);
@@ -180,6 +182,11 @@ function SubjectForm({ subject, onDone }: { subject: Subject | null; onDone: () 
       </button>
 
       <Card title="Zaawansowane">
+        <label className="check">
+          <input type="checkbox" checked={learnArticles} onChange={(e) => setLearnArticles(e.target.checked)} />
+          Ucz numerów artykułów („Który przepis reguluje…?”)
+        </label>
+        <p className="muted small">Włącz tylko, jeśli na egzaminie trzeba znać numery przepisów na pamięć.</p>
         <Field label="Docelowa retencja" hint="Puste = ustawienie globalne. Wyżej = więcej powtórek, lepsza pamięć.">
           <input inputMode="decimal" value={retention} onChange={(e) => setRetention(e.target.value)} placeholder="np. 0,9" />
         </Field>

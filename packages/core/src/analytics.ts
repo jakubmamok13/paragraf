@@ -136,6 +136,8 @@ export function todayFocus(progress: SubjectProgress[], limit = 5): FocusTopic[]
     for (const sec of s.sections) {
       for (const t of sec.topics) {
         if (t.empty && !t.onExamList) continue;
+        // Well remembered and nothing new: not today's concern.
+        if (!t.empty && t.learned === t.items && t.mastery >= 0.9) continue;
         const reason = t.empty
           ? "na liście egzaminacyjnej, brak materiałów"
           : t.learned < t.items

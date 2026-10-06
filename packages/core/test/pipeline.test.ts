@@ -119,6 +119,8 @@ describe("pipeline with the sample note, an old textbook and an exam list", () =
       expect(text).not.toMatch(/dziesięć|10 lat|6 lat/);
     }
     expect(queue.map((m) => m.type)).toEqual(expect.arrayContaining(["cloze", "qa", "why", "distinction"]));
+    // A "Czym różni się…" card is made once for the pair, not once per topic.
+    expect(queue.filter((m) => m.type === "distinction")).toHaveLength(1);
     // At most 4 materials per topic in one pass ("lepiej mniej, a dobrze").
     const perTopic = new Map<string, number>();
     for (const m of queue) perTopic.set(m.topicId, (perTopic.get(m.topicId) ?? 0) + 1);

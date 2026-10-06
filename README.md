@@ -11,9 +11,8 @@ na Twoich urządzeniach:
 
 Założenia i plan: [`docs/PLAN.md`](docs/PLAN.md).
 
-> Stan: **kroki 1–3 z 12**: przedmioty i egzaminy, ustawienia, paczki laptop ↔ telefon,
-> połączenie z lokalnym AI, codzienna sesja z FSRS i własne fiszki. Import źródeł
-> i generowanie materiałów przez AI w kolejnych krokach.
+> Stan: **MVP gotowe (kroki 1–12)**. Następne: wersja 2 (kazusy z oceną AI,
+> pytania ustne, tryb „odróżnij”, planer egzaminacyjny, mapa przedmiotu).
 
 ---
 
@@ -35,6 +34,28 @@ Założenia i plan: [`docs/PLAN.md`](docs/PLAN.md).
 LM Studio: włącz serwer (Developer → Start Server) i CORS, w Paragrafie wybierz
 „LM Studio / inny”, adres `http://localhost:1234`.
 
+## Pracownia: od notatki do fiszek (komputer)
+
+1. **Przedmioty → Dodaj**: nazwa, forma i data egzaminu.
+2. **Pracownia → Wczytaj źródło**: wybierz przedmiot i rodzaj (notatka, podręcznik,
+   tekst ustawy, lista zagadnień, sylabus) i pliki: PDF, EPUB, DOCX, ODT, RTF, TXT,
+   MD, HTML. Notatki z Pages: Plik → Eksportuj do → Word.
+3. Lokalne AI czyta plik fragment po fragmencie. Postęp zapisuje się na bieżąco:
+   możesz wstrzymać, zamknąć i wrócić. Podręcznik zostaw na noc.
+4. **Do decyzji**:
+   - *do zatwierdzenia*: każdy materiał ma cytat ze źródła (kliknij, aby zobaczyć
+     cały fragment); Zatwierdź / Edytuj / Za łatwe / Odrzuć, albo wszystko naraz;
+   - *sprzeczności źródeł*: gdy np. podręcznik sprzed nowelizacji mówi co innego
+     niż wykład, wybierasz właściwą wersję (aplikacja nigdy nie wybiera sama);
+   - *sugestie AI*: to, czego model nie umiał potwierdzić cytatem (np. numer
+     artykułu spoza notatki) – nigdy nie staje się fiszką samo.
+5. **Wyślij treść na telefon** i wczytaj paczkę na telefonie.
+6. Co jakiś czas: na telefonie **Wyślij postęp na komputer**, na komputerze
+   **Wczytaj postęp z telefonu** – trafią tam też fiszki zgłoszone jako błędne.
+
+**Porównaj modele** (Pracownia → Lokalne AI): uruchamia analizę Twojej notatki
+na kilku modelach i pokazuje czas oraz odsetek treści potwierdzonych cytatem.
+
 ## Telefon (iPhone)
 
 Otwórz adres aplikacji w Safari → Udostępnij → **Do ekranu początkowego**.
@@ -53,6 +74,11 @@ Na komputerze działają klawisze: 1–3 (pewność), 1–4 (ocena), T/N (pozycj
 
 Własne fiszki: **Przedmioty → (przedmiot) → Dodaj własną fiszkę**.
 
+**Po wykładzie** (ekran Dziś): gdy masz materiały z dzisiejszej notatki, krótki
+test z nich tego samego dnia. **Zgłoś błąd** w sesji zawiesza fiszkę do poprawy.
+**Postęp**: opanowanie per przedmiot, dział i zagadnienie, czego uczyć się dziś,
+gotowość na egzamin, pewność a wynik, najtrudniejsze fiszki.
+
 ## Kopia zapasowa
 
 Dane są tylko na urządzeniu. **Ustawienia → Eksportuj pełną kopię** zapisuje
@@ -68,6 +94,8 @@ npm test            # testy pakietu core (sql.js w Node)
 npm run typecheck
 npm run dev         # serwer Vite: http://localhost:5173
 npm run build       # pliki statyczne w apps/web/dist
+npm run e2e         # po build: pełny scenariusz w przeglądarce (laptop + telefon)
+                    # z atrapą modelu zamiast prawdziwej Ollamy
 ```
 
 Struktura:
@@ -75,7 +103,12 @@ Struktura:
 - `packages/core`: baza (SQLite przez sql.js) z migracjami, ustawienia,
   przedmioty i egzaminy, paczki, klient lokalnego AI. Bez UI, testowany w Node.
 - `apps/web`: PWA w React; baza zapisywana w IndexedDB, service worker do pracy offline.
-- `prompts/` (od kroku 7): prompty systemowe z wersjami.
+- `prompts/`: prompty systemowe (ekstrakcja, scalanie, generowanie) – można je też
+  edytować w aplikacji (Ustawienia → Pracownia → Prompty AI).
+- `packages/core/test/fixtures`: przykładowa notatka (w kilku formatach),
+  „stary podręcznik” z nieaktualnym terminem przedawnienia i lista zagadnień;
+  `fake-model.ts` udaje lokalny model, łącznie z typowymi błędami (zmyślony
+  cytat, zły numer artykułu, pytanie „Omów…”), które aplikacja musi odrzucić.
 
 Każdy push na `main` uruchamia typecheck i testy, buduje aplikację i publikuje
 ją w gałęzi `gh-pages` (`.github/workflows/pages.yml`). Raz trzeba ustawić
