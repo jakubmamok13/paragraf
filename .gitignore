@@ -1,0 +1,21 @@
+# Your study materials and data never go to the repository
+private/
+data/
+*.pdf
+*.epub
+*.docx
+*.pages
+paragraf-*.json
+
+# Secrets
+.env
+.env.*
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+node_modules/
+apps/web/dist/

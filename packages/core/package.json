@@ -1,0 +1,14 @@
+{
+  "name": "@paragraf/core",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "dependencies": {
+    "sql.js": "^1.14.2",
+    "ts-fsrs": "^5.4.2"
+  },
+  "devDependencies": {
+    "@types/sql.js": "^1.4.11"
+  }
+}
