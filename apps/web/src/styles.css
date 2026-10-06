@@ -93,7 +93,7 @@ h1 { font-size: 1.5rem; margin: 8px 0; }
 .field { display: flex; flex-direction: column; gap: 4px; }
 .field-label { font-weight: 600; font-size: 0.95rem; }
 .field-hint { color: var(--muted); font-size: 0.85rem; }
-.field input, .field select {
+.field input, .field select, .field textarea {
   border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; min-height: 46px;
   background: var(--bg); width: 100%;
 }
@@ -137,3 +137,56 @@ h1 { font-size: 1.5rem; margin: 8px 0; }
 }
 .toast { max-width: 560px; padding: 12px 16px; border-radius: 12px; background: var(--text); color: var(--bg); box-shadow: 0 4px 16px rgb(0 0 0 / 0.2); }
 .toast-error { background: var(--danger); color: #fff; }
+
+.field textarea { resize: vertical; line-height: 1.4; }
+.btn-row { display: flex; gap: 8px; }
+.btn-row > .btn { flex: 1; }
+.btn-big { min-height: 60px; font-size: 1rem; padding: 8px 6px; }
+
+/* ---------- study session: content on top, all buttons in thumb reach at the bottom ---------- */
+.session {
+  min-height: 100dvh; max-width: 720px; margin: 0 auto;
+  display: flex; flex-direction: column;
+  padding: env(safe-area-inset-top) 16px 0;
+}
+.session-head { display: flex; align-items: center; gap: 8px; padding: 8px 0; }
+.session-head .btn-ghost { font-size: 1.3rem; min-width: 48px; }
+.session-progress { flex: 1; display: flex; flex-direction: column; gap: 4px; align-items: center; }
+.bar { width: 100%; height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; }
+.bar > span { display: block; height: 100%; background: var(--accent); border-radius: 3px; transition: width 0.2s; }
+.session-body { flex: 1; display: flex; flex-direction: column; gap: 14px; padding: 12px 0 24px; overflow-y: auto; }
+.session-meta { margin: 0; color: var(--muted); font-size: 0.85rem; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.card-text { margin: 0; font-size: 1.3rem; line-height: 1.45; }
+.card-answer { margin: 0; font-size: 1.2rem; padding: 14px 16px; background: var(--surface); border: 1px solid var(--border); border-left: 4px solid var(--accent); border-radius: 10px; }
+.gap { color: var(--accent); font-weight: 700; }
+.gap-answer { background: var(--accent-soft); color: var(--text); font-weight: 700; padding: 0 4px; border-radius: 4px; }
+.list-reveal { margin: 0; padding-left: 24px; display: flex; flex-direction: column; gap: 8px; font-size: 1.1rem; }
+.list-reveal .current { font-weight: 600; }
+.list-reveal .ok span { color: var(--ok); }
+.list-reveal .miss { color: var(--muted); }
+.list-reveal .miss span { color: var(--danger); }
+.source blockquote { margin: 8px 0 0; padding: 10px 14px; border-left: 3px solid var(--border); background: var(--surface); border-radius: 6px; }
+.session-actions {
+  position: sticky; bottom: 0; background: var(--bg);
+  padding: 10px 0 calc(env(safe-area-inset-bottom) + 12px);
+  display: flex; flex-direction: column; gap: 8px;
+}
+.btn-rate { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; line-height: 1.15; }
+.btn-rate .small { font-weight: 400; opacity: 0.85; }
+.r-again { background: #f6dede; color: #7d1d1d; }
+.r-hard { background: #f6ead6; color: #6b4300; }
+.r-good { background: #dcefdf; color: #1f5a2a; }
+.r-easy { background: #dde8f6; color: #1d4471; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .r-again { background: #4a2323; color: #f6caca; }
+  :root:not([data-theme="light"]) .r-hard { background: #46371e; color: #f3dcb0; }
+  :root:not([data-theme="light"]) .r-good { background: #22402a; color: #c4e8cb; }
+  :root:not([data-theme="light"]) .r-easy { background: #22344a; color: #c6dbf3; }
+}
+.suggested { outline: 3px solid var(--text); outline-offset: 2px; }
+.summary h1 { margin-top: 24px; }
+.calib { display: grid; grid-template-columns: 90px 1fr auto; gap: 10px; align-items: center; }
+.calib-label { font-size: 0.9rem; }
+/* In a session nothing covers the card or the answer buttons: only errors show, at the top. */
+.session ~ .toasts { top: calc(env(safe-area-inset-top) + 56px); bottom: auto; }
+.session ~ .toasts .toast-ok { display: none; }

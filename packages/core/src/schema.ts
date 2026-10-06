@@ -116,4 +116,8 @@ export const MIGRATIONS: string[] = [
     status TEXT NOT NULL, error TEXT, created_at TEXT NOT NULL);
   CREATE INDEX ai_call_cache ON ai_call (prompt_id, prompt_version, model, input_hash);
   `,
+  // v2: undo of the last answer needs the card state from before it.
+  `
+  ALTER TABLE review_log ADD COLUMN prev_state_json TEXT;
+  `,
 ];

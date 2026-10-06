@@ -23,6 +23,10 @@
 | D-7 | Przedmioty i egzaminy w pełni konfigurowalne; przedmiot może mieć kilka zaliczeń (rodzaj, forma, data) | Przedmioty zmieniają się co semestr. |
 | D-8 | Fiszki: odpowiedź w myślach; trzy przyciski pewności (zgaduję / chyba / pewny) jednocześnie odsłaniają odpowiedź; potem Again/Hard/Good/Easy | Metapoznanie bez dodatkowego kliknięcia, wygodne jedną ręką. |
 | D-9 | Pages: eksport do Worda albo podgląd PDF z pliku `.pages`; obsługiwane PDF, DOCX, TXT, MD, ODT, RTF, HTML, EPUB | Format `.pages` jest zamknięty. |
+| D-11 | Wyliczenie („Wymień przesłanki…”) to jedna powtórka: odpowiadasz w myślach całością, potem odsłaniasz pozycje po kolei i zaznaczasz każdą ✓/✗; aplikacja proponuje ocenę (wszystkie → Dobrze, jedna z ≥4 brakująca → Trudno, inaczej → Nie wiedziałem). Długie listy dzieli generator. | Egzamin sprawdza całe wyliczenie; ocena per pozycja zostaje w historii. |
+| D-12 | Planer: budżet czasu z mediany Twoich czasów odpowiedzi; zaległe powtórki według priorytetu (waga × szansa zapomnienia × bliskość egzaminu); nowe materiały wstrzymane, dopóki są zaległości; jedna luka z danego tekstu dziennie; sąsiednie fiszki z różnych zagadnień. | Kryteria MVP: limit czasu i poprawny harmonogram po przerwie (test: 300 fiszek, 5 dni przerwy). |
+| D-13 | Dzień nauki kończy się o 4:00. Przedmiot w podtrzymaniu: retencja 0,8, bez nowych materiałów. Fiszka nieudana 3 razy w jednej sesji czeka do następnej. | Nauka późnym wieczorem liczy się do „dziś”; brak pętli bez końca. |
+| D-14 | Własne fiszki (pytanie, luki, wyliczenie) można dodać ręcznie; nie wymagają źródła, bo są Twoje. | Nauka może ruszyć przed Pracownią. |
 | D-10 | sql.js nie ma FTS5. Wyszukiwanie w źródłach: FTS4 z rankingiem BM25 liczonym w JS albo indeks w JS; rozstrzygnięcie w kroku 5 | Sprawdzone w kroku 1. |
 
 ## Hierarchia źródeł
@@ -63,7 +67,7 @@ Schemat: [`packages/core/src/schema.ts`](../packages/core/src/schema.ts). Najwa�
 
 1. ✅ Repozytorium i szkielet: baza z migracjami, przedmioty i egzaminy, ustawienia, paczki, klient lokalnego AI i test połączenia.
 2. ✅ Przedmioty i egzaminy (dodawanie, edycja, archiwum, podtrzymanie, usuwanie), ustawienia czasu nauki. Zrobione razem z krokiem 1.
-3. FSRS i sesja na telefonie: pewność jako odsłonięcie odpowiedzi, budżet czasu, test kilkudniowej przerwy.
+3. ✅ FSRS i sesja na telefonie: pewność jako odsłonięcie odpowiedzi, budżet czasu, test kilkudniowej przerwy, cofanie odpowiedzi, kalibracja po sesji, własne fiszki.
 4. Import: TXT, MD, DOCX, ODT, RTF, HTML, `.pages` (podgląd PDF); fragmenty z hashami.
 5. Import PDF i EPUB z numerami stron; indeks wyszukiwania i indeks przepisów.
 6. Porównanie modeli na prawdziwej notatce, wybór domyślnego.

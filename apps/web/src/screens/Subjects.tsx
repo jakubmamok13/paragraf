@@ -16,6 +16,7 @@ import {
   updateSubject,
 } from "@paragraf/core";
 import { Card, Field, formatDate, plDays, useAction, useDb } from "../ui";
+import { AddCard } from "./AddCard";
 
 const STATUS_LABEL = { active: "nauka", maintenance: "podtrzymanie", archived: "archiwum" } as const;
 
@@ -82,6 +83,7 @@ function SubjectForm({ subject, onDone }: { subject: Subject | null; onDone: () 
     ],
   );
   const [retention, setRetention] = useState(subject?.targetRetention != null ? String(subject.targetRetention) : "");
+  const [adding, setAdding] = useState(false);
 
   const setExam = (i: number, patch: Partial<ExamInput>) => setExams((xs) => xs.map((x, j) => (j === i ? { ...x, ...patch } : x)));
 
@@ -106,6 +108,8 @@ function SubjectForm({ subject, onDone }: { subject: Subject | null; onDone: () 
     if (ok) void act(() => (deleteSubject(db, subject.id), onDone()), "Usunięto przedmiot.");
   };
 
+  if (adding && subject) return <AddCard subjectId={subject.id} subjectName={subject.name} onDone={() => setAdding(false)} />;
+
   return (
     <div className="screen">
       <div className="screen-head">
@@ -114,6 +118,17 @@ function SubjectForm({ subject, onDone }: { subject: Subject | null; onDone: () 
         </button>
         <h1>{subject ? "Edytuj przedmiot" : "Nowy przedmiot"}</h1>
       </div>
+
+      {subject && (
+        <Card title="Fiszki">
+          <p className="muted small">
+            Aktywne: {subjectStats(db, subject.id).materials}. Materiały z notatek i podręcznika przygotuje Pracownia; własne fiszki możesz dodać od razu.
+          </p>
+          <button className="btn btn-secondary" onClick={() => setAdding(true)}>
+            + Dodaj własną fiszkę
+          </button>
+        </Card>
+      )}
 
       <Card>
         <Field label="Nazwa">

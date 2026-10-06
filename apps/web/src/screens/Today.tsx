@@ -1,38 +1,45 @@
-import { daysBetween, EXAM_FORMATS, EXAM_KINDS, getSettings, listSubjects, localToday } from "@paragraf/core";
+import { daysBetween, EXAM_FORMATS, EXAM_KINDS, listSubjects, localToday, planSession, type SessionPlan } from "@paragraf/core";
 import { Card, plDays, useDb } from "../ui";
 
-export function Today({ goTo }: { goTo: (tab: "subjects" | "workshop") => void }) {
+export function Today({ goTo, onStart }: { goTo: (tab: "subjects" | "workshop") => void; onStart: (plan: SessionPlan) => void }) {
   const { db } = useDb();
-  const settings = getSettings(db);
+  const plan = planSession(db);
   const subjects = listSubjects(db);
   const today = localToday();
-  const nowIso = new Date().toISOString();
   const active = db.get<{ n: number }>("SELECT COUNT(*) AS n FROM material WHERE status = 'active'")!.n;
-  const due = db.get<{ n: number }>(
-    "SELECT COUNT(*) AS n FROM review_item WHERE suspended = 0 AND due <= ? AND (buried_until IS NULL OR buried_until <= ?)",
-    nowIso,
-    nowIso,
-  )!.n;
   const upcoming = subjects.filter((s) => s.nextExam).slice(0, 3);
+  const minutes = Math.max(1, Math.ceil(plan.estSeconds / 60));
+  const hasCards = plan.cards.length > 0;
+
+  let note: string;
+  if (active === 0) note = "Nie masz jeszcze materiałów do nauki.";
+  else if (hasCards) {
+    const parts = [plan.dueIncluded && `powtórki: ${plan.dueIncluded}`, plan.newIncluded && `nowe: ${plan.newIncluded}`].filter(Boolean);
+    note = parts.join(" · ");
+  } else if (plan.budgetSeconds < 30) note = "Dzisiejszy limit czasu wykorzystany. Do jutra!";
+  else note = "Na dziś wszystko zrobione.";
 
   return (
     <div className="screen">
       <section className="hero">
         <p className="hero-label">Dzisiejsza sesja</p>
         <p className="hero-minutes">
-          {settings.dailyMinutes} <span>min</span>
+          {hasCards ? minutes : 0} <span>min</span>
         </p>
-        <button className="btn btn-primary btn-xl" disabled={active === 0}>
+        <button className="btn btn-primary btn-xl" disabled={!hasCards} onClick={() => onStart(plan)}>
           Zacznij
         </button>
-        <p className="hero-note">
-          {active === 0
-            ? "Nie masz jeszcze materiałów do nauki."
-            : due > 0
-              ? `Do powtórki: ${due}`
-              : "Powtórki na dziś zrobione. Mogą dojść nowe materiały."}
-        </p>
+        <p className="hero-note">{note}</p>
       </section>
+
+      {plan.deferred > 0 && (
+        <Card title="Zaległości">
+          <p className="small">
+            {plan.deferred} powtórek nie mieści się dziś w limicie. Rozłożę je na ok. {plan.backlogDays}{" "}
+            {plan.backlogDays === 1 ? "dzień" : "dni"}, zaczynając od najważniejszych przed egzaminem. Nowe materiały wrócą, gdy zaległości znikną.
+          </p>
+        </Card>
+      )}
 
       {active === 0 && (
         <Card title="Jak zacząć">
@@ -48,7 +55,7 @@ export function Today({ goTo }: { goTo: (tab: "subjects" | "workshop") => void }
               <button className="link" onClick={() => goTo("workshop")}>
                 Pracowni
               </button>{" "}
-              wczytaj notatki i podręcznik. Lokalne AI przygotuje materiały do zatwierdzenia.
+              wczytaj notatki i podręcznik. Lokalne AI przygotuje materiały do zatwierdzenia. Możesz też od razu dodać własne fiszki w przedmiocie.
             </li>
             <li>Wyślij paczkę na telefon i ucz się codziennie.</li>
           </ol>

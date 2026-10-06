@@ -5,6 +5,8 @@ import { Today } from "./screens/Today";
 import { Subjects } from "./screens/Subjects";
 import { Workshop } from "./screens/Workshop";
 import { Settings } from "./screens/Settings";
+import { Session } from "./screens/Session";
+import type { SessionPlan } from "@paragraf/core";
 
 type Tab = "today" | "subjects" | "workshop" | "settings";
 const TABS: { id: Tab; label: string; icon: string }[] = [
@@ -18,6 +20,7 @@ export function App() {
   const [rt, setRt] = useState<Runtime | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("today");
+  const [session, setSession] = useState<SessionPlan | null>(null);
 
   useEffect(() => {
     runtime().then(setRt, (e) => setError(String(e)));
@@ -26,10 +29,18 @@ export function App() {
   if (error) return <div className="boot">Nie udało się otworzyć bazy danych: {error}</div>;
   if (!rt) return <div className="boot">Paragraf…</div>;
 
+  if (session) {
+    return (
+      <DbProvider db={rt.db}>
+        <Session plan={session} onClose={() => setSession(null)} />
+      </DbProvider>
+    );
+  }
+
   return (
     <DbProvider db={rt.db}>
       <main className="main">
-        {tab === "today" && <Today goTo={setTab} />}
+        {tab === "today" && <Today goTo={setTab} onStart={setSession} />}
         {tab === "subjects" && <Subjects />}
         {tab === "workshop" && <Workshop />}
         {tab === "settings" && <Settings />}

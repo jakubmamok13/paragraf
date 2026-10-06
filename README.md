@@ -11,9 +11,9 @@ na Twoich urządzeniach:
 
 Założenia i plan: [`docs/PLAN.md`](docs/PLAN.md).
 
-> Stan: **krok 1 z 12**: szkielet aplikacji, przedmioty i egzaminy, ustawienia,
-> paczki laptop ↔ telefon, połączenie z lokalnym AI. Import źródeł i sesja nauki
-> w kolejnych krokach.
+> Stan: **kroki 1–3 z 12**: przedmioty i egzaminy, ustawienia, paczki laptop ↔ telefon,
+> połączenie z lokalnym AI, codzienna sesja z FSRS i własne fiszki. Import źródeł
+> i generowanie materiałów przez AI w kolejnych krokach.
 
 ---
 
@@ -40,6 +40,18 @@ LM Studio: włącz serwer (Developer → Start Server) i CORS, w Paragrafie wybi
 Otwórz adres aplikacji w Safari → Udostępnij → **Do ekranu początkowego**.
 Zawsze używaj ikony: Safari i ikona mają osobne dane.
 Paczkę z komputera wczytasz w **Ustawienia → Wczytaj paczkę**.
+
+## Codzienna sesja
+
+1. **Dziś → Zacznij.** Sesja mieści się w Twoim limicie minut.
+2. Odpowiedz **w myślach**, potem stuknij, jak pewnie to wiesz: *Zgaduję / Chyba wiem / Pewnie*. To odsłania odpowiedź.
+3. Oceń się: *Nie wiedziałem / Trudno / Dobrze / Łatwo*. Pod każdym przyciskiem widać, kiedy fiszka wróci.
+4. Pomyłka? **↶** cofa ostatnią odpowiedź.
+5. Na koniec widzisz, jak Twoja pewność zgadzała się z wynikiem.
+
+Na komputerze działają klawisze: 1–3 (pewność), 1–4 (ocena), T/N (pozycje wyliczenia).
+
+Własne fiszki: **Przedmioty → (przedmiot) → Dodaj własną fiszkę**.
 
 ## Kopia zapasowa
 
