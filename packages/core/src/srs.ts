@@ -182,8 +182,14 @@ export interface SessionPlan {
 export interface PlanOptions {
   /** Only this subject (subject mode). */
   subjectId?: string;
+  /** Only materials from this document (the test right after a lecture). */
+  documentId?: string;
   /** Ignore the daily limit already used (extra session on demand). */
   ignoreStudiedToday?: boolean;
+  /** Time for this session instead of the daily limit. */
+  budgetSeconds?: number;
+  /** New materials allowed in this session instead of the daily number. */
+  newLimit?: number;
 }
 
 interface CandidateRow extends ItemRow {
@@ -257,7 +263,7 @@ export function planSession(db: Db, now = new Date(), opts: PlanOptions = {}): S
   const dayEnd = studyDayEnd(now);
   const studiedTodaySeconds = studiedSecondsSince(db, dayStart);
   const fullBudget = settings.dailyMinutes * 60;
-  const budgetSeconds = Math.max(0, fullBudget - (opts.ignoreStudiedToday ? 0 : studiedTodaySeconds));
+  const budgetSeconds = opts.budgetSeconds ?? Math.max(0, fullBudget - (opts.ignoreStudiedToday ? 0 : studiedTodaySeconds));
   const typical = typicalSeconds(db);
   const examDays = daysToExam(db, now);
   const nowIso = now.toISOString();
@@ -273,10 +279,12 @@ export function planSession(db: Db, now = new Date(), opts: PlanOptions = {}): S
      WHERE m.status = 'active' AND s.status != 'archived' AND i.suspended = 0
        AND (i.buried_until IS NULL OR i.buried_until <= ?)
        AND m.type IN (${SESSION_TYPES.map(() => "?").join(", ")})
-       ${opts.subjectId ? "AND s.id = ?" : ""}`,
+       ${opts.subjectId ? "AND s.id = ?" : ""}
+       ${opts.documentId ? "AND m.id IN (SELECT ci.owner_id FROM citation ci JOIN source_chunk ch ON ch.id = ci.chunk_id WHERE ci.owner_type = 'material' AND ch.document_id = ?)" : ""}`,
     nowIso,
     ...SESSION_TYPES,
     ...(opts.subjectId ? [opts.subjectId] : []),
+    ...(opts.documentId ? [opts.documentId] : []),
   );
 
   const toPlanned = (r: CandidateRow, priority: number): PlannedCard => {
@@ -334,11 +342,11 @@ export function planSession(db: Db, now = new Date(), opts: PlanOptions = {}): S
     if (!prev || r.sub_key.localeCompare(prev.sub_key, undefined, { numeric: true }) < 0) fresh.set(r.material_id, r);
   }
   const newAvailable = fresh.size;
-  const newPaused = deferred > 0;
+  const newPaused = deferred > 0 && opts.newLimit === undefined;
   const added: PlannedCard[] = [];
   if (!newPaused) {
     const introduced = introducedSince(db, dayStart);
-    let left = Math.max(0, settings.newPerDay - [...introduced.values()].reduce((a, b) => a + b, 0));
+    let left = opts.newLimit ?? Math.max(0, settings.newPerDay - [...introduced.values()].reduce((a, b) => a + b, 0));
     const perSubjectLeft = new Map<string, number>();
     // Nearest exam first, heavier topics first, then in the order they were made.
     const ordered = [...fresh.values()].sort(
@@ -350,7 +358,7 @@ export function planSession(db: Db, now = new Date(), opts: PlanOptions = {}): S
     const queue = settings.interleaveSubjects ? roundRobin(ordered, (r) => r.subject_id) : ordered;
     for (const r of queue) {
       if (left <= 0) break;
-      if (r.daily_new_limit != null) {
+      if (r.daily_new_limit != null && opts.newLimit === undefined) {
         const l = perSubjectLeft.get(r.subject_id) ?? r.daily_new_limit - (introduced.get(r.subject_id) ?? 0);
         if (l <= 0) continue;
         perSubjectLeft.set(r.subject_id, l - 1);
@@ -441,6 +449,12 @@ function spread(cards: PlannedCard[], bySubject: boolean): PlannedCard[] {
     out.push(pool.splice(idx, 1)[0]!);
   }
   return out;
+}
+
+/** Chance of recalling an item now (0 for one never studied). */
+export function recallOf(row: Pick<ItemRow, "due" | "stability" | "difficulty" | "elapsed_days" | "scheduled_days" | "learning_steps" | "reps" | "lapses" | "state" | "last_review">, at: Date): number {
+  if (row.state === State.New || !row.last_review) return 0;
+  return scheduler(0.9).get_retrievability(toCard(row as ItemRow), at, false);
 }
 
 // ---------- answering ----------

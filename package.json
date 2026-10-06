@@ -4,8 +4,13 @@
   "version": "0.1.0",
   "description": "Paragraf: nauka prawa oparta na przywoływaniu z pamięci i FSRS",
   "type": "module",
-  "workspaces": ["packages/*", "apps/*"],
-  "engines": { "node": ">=22" },
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "build": "npm run build --workspace apps/web",
     "dev": "npm run dev --workspace apps/web",
@@ -15,6 +20,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.20.5",
+    "tsx": "^4.23.15",
     "typescript": "~5.9.3",
     "vitest": "^5.0.3"
   }

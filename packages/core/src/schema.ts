@@ -120,4 +120,22 @@ export const MIGRATIONS: string[] = [
   `
   ALTER TABLE review_log ADD COLUMN prev_state_json TEXT;
   `,
+  // v3: processing pipeline.
+  `
+  ALTER TABLE topic ADD COLUMN emphasis INTEGER NOT NULL DEFAULT 0;       -- times the lecturer stressed it
+  ALTER TABLE topic ADD COLUMN on_exam_list INTEGER NOT NULL DEFAULT 0;   -- 0 no, 1 syllabus, 2 exam list
+  ALTER TABLE subject ADD COLUMN learn_article_numbers INTEGER NOT NULL DEFAULT 0;
+  CREATE TABLE suggestion (id TEXT PRIMARY KEY, subject_id TEXT NOT NULL REFERENCES subject(id) ON DELETE CASCADE,
+    topic_id TEXT, chunk_id TEXT,
+    kind TEXT NOT NULL,                               -- gap | rejected_field | rejected_material
+    text TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'open', created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+  CREATE TABLE job (id TEXT PRIMARY KEY, subject_id TEXT NOT NULL REFERENCES subject(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL,                               -- extract | generate
+    document_id TEXT, topic_ids_json TEXT,
+    status TEXT NOT NULL DEFAULT 'queued',            -- queued | running | paused | done | error
+    done INTEGER NOT NULL DEFAULT 0, total INTEGER NOT NULL DEFAULT 0, error TEXT,
+    created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+  CREATE TABLE topic_generation (topic_id TEXT PRIMARY KEY REFERENCES topic(id) ON DELETE CASCADE,
+    fields_hash TEXT NOT NULL, generated_at TEXT NOT NULL);
+  `,
 ];

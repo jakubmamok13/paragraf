@@ -19,3 +19,6 @@ Thumbs.db
 
 node_modules/
 apps/web/dist/
+
+# Test files written for this project (no personal data)
+!packages/core/test/fixtures/**

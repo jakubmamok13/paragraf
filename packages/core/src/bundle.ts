@@ -8,6 +8,7 @@
 // Merging is by row id. Rows with updated_at: the newer one wins. Rows without
 // it (links, logs) are inserted once. A content package never touches review
 // state, and a progress package never touches content.
+import { gunzipSync, gzipSync, strFromU8, strToU8 } from "fflate";
 import { type Db, type Row, nowIso } from "./db";
 
 export type PackageKind = "content" | "progress" | "backup";
@@ -192,5 +193,25 @@ function primaryKeyOf(db: Db, table: string): string[] {
 export function packageFileName(kind: PackageKind, d = new Date()): string {
   const stamp = d.toISOString().slice(0, 16).replace(/[:T]/g, "-");
   const label = { content: "tresc", progress: "postep", backup: "kopia" }[kind];
-  return `paragraf-${label}-${stamp}.json`;
+  return `paragraf-${label}-${stamp}.json.gz`;
+}
+
+/** A package as a file: gzip-compressed JSON (a textbook's text shrinks several times). */
+export function encodePackage(pkg: Package): Uint8Array {
+  return gzipSync(strToU8(JSON.stringify(pkg)), { level: 6 });
+}
+
+/** Reads a package file: compressed (.json.gz) or plain JSON from older versions. */
+export function decodePackage(bytes: Uint8Array): Package {
+  let text: string;
+  if (bytes[0] === 0x1f && bytes[1] === 0x8b) {
+    try {
+      text = strFromU8(gunzipSync(bytes));
+    } catch {
+      throw new Error("Plik paczki jest uszkodzony (nie da się go rozpakować).");
+    }
+  } else {
+    text = strFromU8(bytes);
+  }
+  return parsePackage(text);
 }

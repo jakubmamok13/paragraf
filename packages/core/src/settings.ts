@@ -22,6 +22,10 @@ export interface Settings {
   /** Mix subjects in the daily session (interleaving). */
   interleaveSubjects: boolean;
   ai: AiSettings;
+  /** Process an imported file right away (else on demand). */
+  autoProcess: boolean;
+  /** User-edited system prompts, by prompt id. */
+  promptOverrides: Record<string, string>;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -31,6 +35,8 @@ export const DEFAULT_SETTINGS: Settings = {
   maxNewPerLecture: 20,
   interleaveSubjects: true,
   ai: { provider: "ollama", baseUrl: "http://localhost:11434", model: "" },
+  autoProcess: true,
+  promptOverrides: {},
 };
 
 export const LIMITS = {
