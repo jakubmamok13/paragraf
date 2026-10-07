@@ -17,6 +17,7 @@ import {
   placementsFor,
   recentWords,
   recordDrill,
+  samePhrase,
   sameWord,
   savePalace,
   scoreRecall,
@@ -52,6 +53,8 @@ describe("scoring", () => {
     expect(sameWord("koń", "kot")).toBe(false);
     expect(sameWord("zasiedzenie", "przedawnienie")).toBe(false);
     expect(scoreRecall(["jabłko", "lampa", "sowa"], ["jablko", "", "sowa"])).toEqual({ correct: 2, perItem: [true, false, true] });
+    expect(samePhrase("nieprzerwany upływ czasu określonego w ustawie", "nieprzerwany uplyw czasu")).toBe(true);
+    expect(samePhrase("posiadanie samoistne", "dobra wiara")).toBe(false);
   });
 
   it("draws lists from the word bank, avoiding words used recently", () => {

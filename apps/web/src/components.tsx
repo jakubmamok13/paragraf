@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { DOCUMENT_KIND_LABEL, getChunk, locateQuote, MATERIAL_LABEL, type MaterialType, parseCloze } from "@paragraf/core";
+import { DOCUMENT_KIND_LABEL, getChunk, locateQuote, MATERIAL_LABEL, type MaterialType, parseCloze, slotInfo, type TopicSchema, topicSchema } from "@paragraf/core";
 import { useDb } from "./ui";
 
 /** A material as text, for the approval queue (the session has its own, interactive one). */
@@ -100,5 +100,82 @@ export function Citation({ quote, title, page, lectureDate, onOpen }: { quote: s
         {lectureDate ? `, wykład ${lectureDate}` : ""} ↗
       </span>
     </button>
+  );
+}
+
+// ---------- a topic as one system ----------
+
+
+/**
+ * The parts of a topic as a strip, with the current part marked. Only the
+ * part names show, never their content, so it does not give the answer away.
+ */
+export function TopicMap({ schema, current }: { schema: TopicSchema; current: string | null }) {
+  const idx = schema.parts.findIndex((p) => p.slot === current);
+  const cur = slotInfo(current);
+  return (
+    <div className="topic-map" aria-label={`Zagadnienie ${schema.name}${cur ? `, część: ${cur.label} (${idx + 1} z ${schema.parts.length})` : ""}`}>
+      <div className="topic-map-strip" aria-hidden>
+        {schema.parts.map((p) => (
+          <span
+            key={p.slot}
+            className={`topic-seg ${p.slot === current ? "on" : ""}`}
+            title={`${p.label}: opanowanie ${Math.round(p.mastery * 100)}%`}
+            style={{ "--m": p.mastery } as React.CSSProperties}
+          >
+            {p.icon}
+          </span>
+        ))}
+      </div>
+      {cur && (
+        <span className="small muted">
+          {cur.icon} {cur.label} · {idx + 1} z {schema.parts.length}
+        </span>
+      )}
+    </div>
+  );
+}
+
+/** The whole topic after an answer: every part with its content and how well you know it. */
+export function TopicSheet({ topicId, current, onClose }: { topicId: string; current?: string | null; onClose: () => void }) {
+  const { db } = useDb();
+  const schema = topicSchema(db, topicId);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  if (!schema) return null;
+  return (
+    <div className="modal-back" onClick={onClose} role="presentation">
+      <div className="modal" role="dialog" aria-modal="true" aria-label={`Całe zagadnienie: ${schema.name}`} onClick={(e) => e.stopPropagation()}>
+        <header className="modal-head">
+          <div>
+            <strong>{schema.name}</strong>
+            <p className="muted small">{schema.subjectName} · schemat zagadnienia</p>
+          </div>
+          <button className="btn btn-ghost" onClick={onClose} aria-label="Zamknij">
+            ✕
+          </button>
+        </header>
+        <div className="source-text sheet">
+          {schema.parts.map((p) => (
+            <section key={p.slot} className={`sheet-part ${p.slot === current ? "on" : ""}`}>
+              <div className="list-row">
+                <strong>
+                  {p.icon} {p.label}
+                </strong>
+                <span className="small muted">{p.items ? `${Math.round(p.mastery * 100)}% · ${p.learned}/${p.items}` : "bez fiszki"}</span>
+              </div>
+              <ul>
+                {p.points.map((x) => (
+                  <li key={x.fieldId}>{x.text}</li>
+                ))}
+              </ul>
+            </section>
+          ))}
+        </div>
+      </div>
+    </div>
   );
 }

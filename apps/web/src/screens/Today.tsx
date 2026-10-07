@@ -1,7 +1,15 @@
-import { daysBetween, EXAM_FORMATS, EXAM_KINDS, listSubjects, localToday, planSession, recentLectures, type SessionPlan } from "@paragraf/core";
+import { daysBetween, EXAM_FORMATS, EXAM_KINDS, lessonCandidates, listSubjects, localToday, planSession, recentLectures, type SessionPlan } from "@paragraf/core";
 import { Card, plDays, useDb } from "../ui";
 
-export function Today({ goTo, onStart }: { goTo: (tab: "subjects" | "workshop") => void; onStart: (plan: SessionPlan, mode?: string) => void }) {
+export function Today({
+  goTo,
+  onStart,
+  onLesson,
+}: {
+  goTo: (tab: "subjects" | "workshop") => void;
+  onStart: (plan: SessionPlan, mode?: string) => void;
+  onLesson: (topicId: string) => void;
+}) {
   const { db } = useDb();
   const plan = planSession(db);
   const subjects = listSubjects(db);
@@ -11,6 +19,7 @@ export function Today({ goTo, onStart }: { goTo: (tab: "subjects" | "workshop") 
   const minutes = Math.max(1, Math.ceil(plan.estSeconds / 60));
   const hasCards = plan.cards.length > 0;
   const lectures = recentLectures(db);
+  const lessons = lessonCandidates(db);
 
   let note: string;
   if (active === 0) note = "Nie masz jeszcze materiałów do nauki.";
@@ -49,6 +58,24 @@ export function Today({ goTo, onStart }: { goTo: (tab: "subjects" | "workshop") 
           </button>
         </Card>
       ))}
+
+      {lessons.length > 0 && (
+        <Card title="Nowe zagadnienia">
+          <p className="muted small">Krótka lekcja (2–4 min) przed pierwszymi fiszkami: pytania wstępne, schemat zagadnienia, od razu sprawdzenie.</p>
+          <ul className="list">
+            {lessons.map((l) => (
+              <li key={l.topicId} className="list-row">
+                <span className="small">
+                  <strong>{l.name}</strong> <span className="muted">· {l.subjectName} · {l.cards} fiszek</span>
+                </span>
+                <button className="btn btn-secondary btn-small" onClick={() => onLesson(l.topicId)}>
+                  Lekcja
+                </button>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
 
       {plan.deferred > 0 && (
         <Card title="Zaległości">

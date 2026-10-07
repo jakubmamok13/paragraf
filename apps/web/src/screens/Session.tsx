@@ -16,9 +16,11 @@ import {
   recordAnswer,
   type SessionPlan,
   undoAnswer,
+  placementsFor,
+  topicSchema,
 } from "@paragraf/core";
 import { useAction, useDb, useToast } from "../ui";
-import { type SourceRef, SourceViewer } from "../components";
+import { type SourceRef, SourceViewer, TopicMap, TopicSheet } from "../components";
 
 type Phase = "question" | "list" | "answer";
 
@@ -41,6 +43,7 @@ export function Session({ plan, mode = "daily", onClose }: { plan: SessionPlan; 
   const act = useAction();
   const toast = useToast();
   const [viewer, setViewer] = useState<SourceRef | null>(null);
+  const [sheet, setSheet] = useState(false);
   const [queue, setQueue] = useState<PlannedCard[]>(plan.cards);
   const [index, setIndex] = useState(0);
   const [phase, setPhase] = useState<Phase>("question");
@@ -159,6 +162,10 @@ export function Session({ plan, mode = "daily", onClose }: { plan: SessionPlan; 
 
   const elapsedMin = Math.floor((Date.now() - sessionStart.current) / 60_000);
   const sources = showSource ? materialSources(db, card.materialId) : [];
+  // Recomputed per card; cheap (one topic).
+  const schema = topicSchema(db, card.topicId);
+  // Your palace images for a list: shown only after you tried to recall it yourself.
+  const palace = card.type === "list" ? placementsFor(db, card.materialId) : null;
 
   return (
     <div className="session">
@@ -184,6 +191,7 @@ export function Session({ plan, mode = "daily", onClose }: { plan: SessionPlan; 
           {card.subjectName} · {card.topicName} · {MATERIAL_LABEL[card.type]}
           {card.isNew && !requeues.current.has(card.itemId) && <span className="pill">nowe</span>}
         </p>
+        {schema && schema.parts.length > 1 && <TopicMap schema={schema} current={card.slot} />}
         <CardFront card={card} revealed={phase === "answer"} />
 
         {phase === "list" && (
@@ -206,12 +214,32 @@ export function Session({ plan, mode = "daily", onClose }: { plan: SessionPlan; 
           </ol>
         )}
 
+        {phase === "answer" && palace && (
+          <div className="palace-hint">
+            <p className="small">
+              🏛 <strong>{palace.palaceName}</strong> – Twoje obrazy:
+            </p>
+            <ol className="small">
+              {palace.placements.map((p) => (
+                <li key={p.locusId}>
+                  <strong>{p.locusName}:</strong> {p.image || "(bez opisu)"}
+                </li>
+              ))}
+            </ol>
+          </div>
+        )}
+
         {phase === "answer" && (
           <div className="source">
             <div className="source-links">
               <button className="link small" onClick={() => setShowSource((v) => !v)}>
                 {showSource ? "Ukryj źródło" : "Pokaż źródło"}
               </button>
+              {schema && schema.parts.length > 1 && (
+                <button className="link small" onClick={() => setSheet(true)}>
+                  Całe zagadnienie
+                </button>
+              )}
               <button className="link small flag" onClick={flag}>
                 ⚑ Zgłoś błąd
               </button>
@@ -239,6 +267,7 @@ export function Session({ plan, mode = "daily", onClose }: { plan: SessionPlan; 
       </div>
 
       {viewer && <SourceViewer source={viewer} onClose={() => setViewer(null)} />}
+      {sheet && <TopicSheet topicId={card.topicId} current={card.slot} onClose={() => setSheet(false)} />}
       <footer className="session-actions">
         {phase === "question" && (
           <>

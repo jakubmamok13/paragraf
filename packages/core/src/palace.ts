@@ -156,6 +156,16 @@ export function sameWord(expected: string, answer: string): boolean {
   return editDistance(e, a) <= (e.length >= 8 ? 2 : 1);
 }
 
+/** For phrases (list items like "posiadanie samoistne"): most of the meaningful words must be there. */
+export function samePhrase(expected: string, answer: string): boolean {
+  const words = (x: string) => fold(x).split(" ").filter((w) => w.length >= 3);
+  const want = words(expected);
+  const have = words(answer);
+  if (!want.length) return sameWord(expected, answer);
+  const hit = want.filter((w) => have.some((h) => sameWord(w, h))).length;
+  return hit / want.length >= 0.6;
+}
+
 /** Recall in order: one point per locus where the right item was given. */
 export function scoreRecall(expected: string[], answers: string[]): { correct: number; perItem: boolean[] } {
   const perItem = expected.map((e, i) => sameWord(e, answers[i] ?? ""));
