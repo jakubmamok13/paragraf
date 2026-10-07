@@ -90,3 +90,29 @@ normalnie na urządzeniu, a zmiany wyślą się po zalogowaniu.
 
 Ustawienia → Dysk Google → **Odłącz**. Dane zostają i na urządzeniu, i w
 folderze. Synchronizacja po prostu przestaje działać.
+
+## Gdy coś nie działa
+
+**„Błąd 401: invalid_client”** – Google nie zna wysłanego identyfikatora klienta.
+
+1. W aplikacji: Ustawienia → Dysk Google → „Identyfikator klienta Google”.
+   Porównaj go znak po znaku z Google Cloud → Google Auth Platform → **Klienci**
+   (kolumna „Identyfikator klienta”).
+2. Musi to być **identyfikator** (`…-….apps.googleusercontent.com`), nie
+   **sekret** (`GOCSPX-…`). Aplikacja odrzuca sekret i sama usuwa spacje, znaki
+   nowej linii i dopiski typu „Client ID:”.
+3. Jeśli identyfikator jest wbudowany przez zmienną `GOOGLE_CLIENT_ID` na
+   GitHubie, sprawdź jej wartość. Możesz też wpisać poprawny identyfikator w
+   aplikacji: zastąpi wbudowany na tym urządzeniu.
+4. Klient musi być typu **Aplikacja internetowa** i należeć do projektu, który
+   nie jest usunięty.
+5. Świeżo utworzony klient może zacząć działać dopiero po kilku minutach.
+   Spróbuj ponownie po chwili.
+
+**„Błąd 400: redirect_uri_mismatch”** – adres powrotu w kliencie Google różni
+się od adresu aplikacji. Skopiuj oba adresy z aplikacji (Ustawienia → Dysk
+Google → „Identyfikator klienta Google”) do pól „Autoryzowane źródła
+JavaScript” i „Autoryzowane identyfikatory URI przekierowania”.
+
+**„Błąd 403: access_denied”** – Twoje konto nie jest na liście użytkowników
+testowych (Google Auth Platform → Odbiorcy). Dodaj je albo opublikuj aplikację.

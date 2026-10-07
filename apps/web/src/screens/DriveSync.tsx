@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { clientId, createFolder, type DriveFile, driveConfig, forgetDrive, hasToken, listFolders, redirectUri, saveDriveConfig, signIn } from "../drive";
+import { clientId, clientIdProblem, clientIdSource, createFolder, normalizeClientId, type DriveFile, driveConfig, forgetDrive, hasToken, listFolders, redirectUri, saveDriveConfig, signIn } from "../drive";
 import { onSync, startSync, syncConfigured, type SyncState, syncNow, syncState } from "../sync";
 import { Card, Field, useAction, useDb, useToast } from "../ui";
 
@@ -81,20 +81,7 @@ export function DriveCard() {
           </a>
           ).
         </p>
-        <Field label="Adres powrotu do wpisania w Google Cloud" hint="Skopiuj go dokładnie, z ukośnikiem na końcu.">
-          <input readOnly value={redirectUri()} onFocus={(e) => e.target.select()} />
-        </Field>
-        <Field label="Identyfikator klienta OAuth" hint="Kończy się na .apps.googleusercontent.com">
-          <input
-            defaultValue={cfg.clientId}
-            placeholder="123…-abc….apps.googleusercontent.com"
-            onBlur={(e) => {
-              const v = e.target.value.trim();
-              if (v && !/\.apps\.googleusercontent\.com$/.test(v)) toast("To nie wygląda na identyfikator klienta Google.", "error");
-              else update({ clientId: v });
-            }}
-          />
-        </Field>
+        <ClientSetup onChange={() => rerender((n) => n + 1)} />
       </>
     );
   } else if (!cfg.folderId) {
@@ -140,6 +127,11 @@ export function DriveCard() {
         <button className="btn btn-primary" onClick={() => void act(() => signIn(true))}>
           Połącz z Dyskiem Google
         </button>
+        <InvalidClientHint />
+        <details>
+          <summary className="small">Identyfikator klienta Google</summary>
+          <ClientSetup onChange={() => rerender((n) => n + 1)} />
+        </details>
       </>
     );
   } else {
@@ -149,7 +141,7 @@ export function DriveCard() {
           Folder: <strong>📁 {cfg.folderName}</strong>
           {cfg.email && <span className="muted"> · {cfg.email}</span>}
         </p>
-        <p className={`small ${s.status === "error" ? "status-warn" : "muted"}`}>
+        <p className={`small ${s.status === "error" ? "status-warn" : "muted"}`} data-sync={`${s.status} ${cfg.lastSyncAt ?? ""}`}>
           {s.status === "syncing"
             ? "Synchronizuję…"
             : s.status === "error"
@@ -203,8 +195,66 @@ export function DriveCard() {
           Synchronizacja działa sama: przy otwarciu aplikacji, co kilka minut, po zmianach i przy wyjściu z aplikacji. Każde urządzenie zapisuje swój plik,
           a Dysk pamięta jego wcześniejsze wersje. Ustawienia lokalnego AI zostają na komputerze.
         </p>
+        {s.status === "needs-login" && <InvalidClientHint />}
+        <details>
+          <summary className="small">Identyfikator klienta Google</summary>
+          <ClientSetup onChange={() => rerender((n) => n + 1)} />
+        </details>
       </>
     );
   }
   return <Card title="Dysk Google – kopia i synchronizacja">{body}</Card>;
+}
+
+/** Google's "Błąd 401: invalid_client" means it does not know the ID that was sent. */
+function InvalidClientHint() {
+  return (
+    <p className="muted small">
+      Google pokazuje „Błąd 401: invalid_client”? Google nie zna wysłanego identyfikatora. Porównaj go niżej z Google Cloud → Google Auth Platform →
+      Klienci. Musi to być <strong>identyfikator klienta</strong>, nie sekret (sekret zaczyna się od „GOCSPX-”). Klient typu „Aplikacja internetowa”
+      utworzony przed chwilą może zacząć działać dopiero po kilku minutach.
+    </p>
+  );
+}
+
+/** The OAuth client ID: shown, checked and changeable on the device (also when it comes with the published app). */
+function ClientSetup({ onChange }: { onChange: () => void }) {
+  const toast = useToast();
+  const source = clientIdSource();
+  const [value, setValue] = useState(driveConfig().clientId || clientId());
+  const save = () => {
+    const problem = clientIdProblem(value);
+    if (problem) {
+      toast(problem, "error");
+      return;
+    }
+    const id = normalizeClientId(value);
+    setValue(id);
+    saveDriveConfig({ clientId: id, token: null, tokenExpires: 0 });
+    toast(id ? "Zapisano identyfikator klienta." : "Usunięto identyfikator wpisany na tym urządzeniu.");
+    onChange();
+  };
+  return (
+    <>
+      <Field label="Adres powrotu do wpisania w Google Cloud" hint="„Autoryzowane identyfikatory URI przekierowania” – dokładnie tak, z ukośnikiem na końcu.">
+        <input readOnly value={redirectUri()} onFocus={(e) => e.target.select()} />
+      </Field>
+      <Field label="Źródło JavaScript do wpisania w Google Cloud" hint="„Autoryzowane źródła JavaScript” – bez ukośnika na końcu.">
+        <input readOnly value={location.origin} onFocus={(e) => e.target.select()} />
+      </Field>
+      <Field
+        label="Identyfikator klienta OAuth"
+        hint={
+          source === "build"
+            ? "Wbudowany w opublikowaną aplikację (zmienna GOOGLE_CLIENT_ID). Wpisz inny, żeby go zastąpić na tym urządzeniu."
+            : "Kończy się na .apps.googleusercontent.com. Wklej z Google Cloud → Klienci."
+        }
+      >
+        <input value={value} placeholder="1234567890-abc123.apps.googleusercontent.com" onChange={(e) => setValue(e.target.value)} spellCheck={false} autoCapitalize="off" autoCorrect="off" />
+      </Field>
+      <button className="btn btn-secondary btn-small" onClick={save}>
+        Zapisz identyfikator
+      </button>
+    </>
+  );
 }

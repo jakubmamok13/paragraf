@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   type Db,
   decodePackage,
@@ -37,16 +37,19 @@ export async function importFromPicker(db: Db, toast: (t: string, k?: "ok" | "er
 }
 
 export function Settings() {
-  const { db, changed } = useDb();
+  const { db, changed, version } = useDb();
   const act = useAction();
   const toast = useToast();
   const s = getSettings(db);
-  const [draft, setDraft] = useState({
+  const fromSettings = () => ({
     dailyMinutes: String(s.dailyMinutes),
     targetRetention: String(s.targetRetention).replace(".", ","),
     newPerDay: String(s.newPerDay),
     maxNewPerLecture: String(s.maxNewPerLecture),
   });
+  const [draft, setDraft] = useState(fromSettings);
+  // Values that arrive from another device (synchronisation) show up at once.
+  useEffect(() => setDraft(fromSettings()), [version]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const commit = (key: keyof typeof draft) => {
     const v = Number(draft[key].replace(",", "."));

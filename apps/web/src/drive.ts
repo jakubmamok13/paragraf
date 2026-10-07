@@ -39,7 +39,24 @@ export interface DriveConfig {
 }
 
 const KEY = "paragraf.drive";
-const BUILT_IN_CLIENT_ID: string = (import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined) ?? "";
+/**
+ * The ID out of whatever was pasted: stray spaces, a line break from a copied
+ * repository variable, quotes, a "Client ID:" label or the whole JSON file.
+ */
+export function normalizeClientId(raw: string | undefined | null): string {
+  const m = /\d+-[a-z0-9]+\.apps\.googleusercontent\.com/i.exec(raw ?? "");
+  return m ? m[0] : (raw ?? "").trim();
+}
+export const isClientId = (s: string): boolean => /^\d+-[a-z0-9]+\.apps\.googleusercontent\.com$/i.test(s);
+/** What is wrong with a pasted client ID, or null. */
+export function clientIdProblem(raw: string): string | null {
+  const v = raw.trim();
+  if (!v) return null;
+  if (/^GOCSPX-/i.test(v)) return "To jest sekret klienta, a potrzebny jest identyfikator klienta (kończy się na .apps.googleusercontent.com).";
+  if (!isClientId(normalizeClientId(v))) return "To nie wygląda na identyfikator klienta Google (np. 1234567890-abc123.apps.googleusercontent.com).";
+  return null;
+}
+const BUILT_IN_CLIENT_ID: string = normalizeClientId(import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined);
 
 function guessDeviceName(): string {
   const ua = navigator.userAgent;
@@ -86,7 +103,9 @@ export function saveDriveConfig(patch: Partial<DriveConfig>): DriveConfig {
   }
   return cache;
 }
-export const clientId = (): string => driveConfig().clientId.trim() || BUILT_IN_CLIENT_ID;
+export const clientId = (): string => normalizeClientId(driveConfig().clientId) || BUILT_IN_CLIENT_ID;
+/** Where the ID in use comes from: typed in on this device, or built into the published app. */
+export const clientIdSource = (): "device" | "build" | "none" => (driveConfig().clientId.trim() ? "device" : BUILT_IN_CLIENT_ID ? "build" : "none");
 export const hasToken = (): boolean => Boolean(driveConfig().token) && driveConfig().tokenExpires > Date.now() + 60_000;
 
 /** The address Google sends you back to; it must be listed in the OAuth client exactly like this. */
@@ -100,8 +119,11 @@ export function redirectUri(): string {
 export async function signIn(interactive: boolean): Promise<void> {
   const id = clientId();
   if (!id) throw new Error("Brak identyfikatora klienta Google (Ustawienia → Dysk Google).");
+  if (!isClientId(id)) throw new Error(clientIdProblem(id) ?? "Nieprawidłowy identyfikator klienta Google.");
   const state = crypto.randomUUID();
-  const cfg = saveDriveConfig({ silentAt: interactive ? driveConfig().silentAt : Date.now() });
+  // A silent attempt that never comes back (Google showed an error page) must not be
+  // retried on every opening: until a token arrives, ask for a click instead.
+  const cfg = saveDriveConfig(interactive ? {} : { silentAt: Date.now(), needsLogin: true });
   try {
     localStorage.setItem(`${KEY}.state`, state);
   } catch {

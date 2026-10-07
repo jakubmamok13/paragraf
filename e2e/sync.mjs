@@ -38,6 +38,7 @@ let seq = 0;
 const tokens = new Map(); // token → device
 const consent = new Set(); // devices that agreed
 const authLog = [];
+let brokenClient = false; // Google answers with its own error page (invalid_client)
 let clock = Date.parse("2026-10-07T08:00:00Z");
 const stamp = () => new Date((clock += 1000)).toISOString();
 const cors = {
@@ -70,6 +71,7 @@ async function mockGoogle(context, device) {
     if (url.pathname === "/generate_204") return route.fulfill({ status: 204, headers: cors });
     const p = url.searchParams;
     authLog.push({ device, prompt: p.get("prompt"), clientId: p.get("client_id") });
+    if (brokenClient) return route.fulfill({ status: 401, contentType: "text/html", body: "<h1>Błąd 401: invalid_client</h1>" });
     let fragment;
     if (p.get("prompt") !== "none") consent.add(device);
     if (consent.has(device)) {
@@ -123,13 +125,24 @@ const syncFiles = () => [...files.values()].filter((f) => f.name.startsWith("par
 
 async function connect(page) {
   await page.getByRole("button", { name: "Ustawienia" }).click();
-  await page.getByLabel("Identyfikator klienta OAuth").fill(CLIENT_ID);
-  await page.getByLabel("Identyfikator klienta OAuth").blur();
+  // A secret instead of the ID is refused; an ID pasted with a label and a line break is cleaned up.
+  await page.getByLabel("Identyfikator klienta OAuth").fill("GOCSPX-abcdef");
+  await page.getByRole("button", { name: "Zapisz identyfikator" }).click();
+  await page.getByText(/To jest sekret klienta/).waitFor();
+  await page.getByLabel("Identyfikator klienta OAuth").fill(`  Client ID: ${CLIENT_ID}\n`);
+  await page.getByRole("button", { name: "Zapisz identyfikator" }).click();
   await page.getByRole("button", { name: "Połącz z Dyskiem Google" }).click();
   await page.waitForURL(base);
   await page.getByRole("button", { name: "Ustawienia" }).click();
 }
-const waitSynced = (page) => page.getByText(/Ostatnia synchronizacja: \d/).waitFor({ timeout: 10000 });
+/** Waits for a sync that finished after `since` (the status line carries its time). */
+const waitSynced = async (page, since = "") => {
+  await page.getByText(/Ostatnia synchronizacja: \d/).waitFor({ timeout: 10000 });
+  await page.waitForFunction((t) => {
+    const [status, at] = (document.querySelector("[data-sync]")?.getAttribute("data-sync") ?? "").split(" ");
+    return status === "idle" && at > t;
+  }, since, { timeout: 10000 });
+};
 
 // ================= LAPTOP: has data, creates the folder =================
 const laptop = await browser.newContext({ viewport: { width: 1200, height: 900 } });
@@ -204,9 +217,10 @@ check(syncFiles().find((f) => f.name.includes("telefon")).modifiedTime !== befor
 step("phone: answered a card, set 35 min; uploaded on leaving the app");
 
 // ================= LAPTOP opens the app again =================
+const t0 = new Date().toISOString();
 await L.reload();
 await L.getByRole("button", { name: "Ustawienia" }).click();
-await waitSynced(L);
+await waitSynced(L, t0);
 check((await L.getByLabel("Minuty dziennie").inputValue()) === "35", "setting from the phone");
 await L.getByRole("button", { name: "Postęp", exact: true }).click();
 await L.getByText("Opanowane materiały: 1 z 1").waitFor();
@@ -221,9 +235,10 @@ await L.evaluate(() => {
   localStorage.setItem("paragraf.drive", JSON.stringify({ ...c, tokenExpires: 0, silentAt: 0 }));
 });
 const n = authLog.length;
+const t1 = new Date().toISOString();
 await L.reload();
 await L.getByRole("button", { name: "Ustawienia" }).click();
-await waitSynced(L);
+await waitSynced(L, t1);
 check(authLog.length === n + 1 && authLog.at(-1).prompt === "none", "silent renewal: " + JSON.stringify(authLog.slice(n)));
 step("laptop: expired sign-in renewed silently on opening");
 
@@ -241,6 +256,23 @@ await P.waitForURL(base);
 await P.getByRole("button", { name: "Ustawienia" }).click();
 await waitSynced(P);
 step("phone: banner when Google wants a click; after it, synced again");
+
+// ================= Google refuses the client: no redirect loop =================
+brokenClient = true;
+await L.evaluate(() => {
+  const c = JSON.parse(localStorage.getItem("paragraf.drive"));
+  localStorage.setItem("paragraf.drive", JSON.stringify({ ...c, tokenExpires: 0, silentAt: 0 }));
+});
+await L.reload();
+await L.getByText("invalid_client").waitFor(); // stuck on Google's page, as on a real phone
+await L.goto(base); // you come back to the app
+await L.getByRole("button", { name: "Zaloguj do Dysku Google" }).waitFor();
+await L.getByRole("button", { name: "Ustawienia" }).click();
+await L.getByText(/Google pokazuje „Błąd 401: invalid_client”/).waitFor();
+await L.getByText("Identyfikator klienta Google").click();
+check((await L.getByLabel("Identyfikator klienta OAuth").inputValue()) === CLIENT_ID, "client ID shown and stored without the label");
+await L.screenshot({ path: out + "/S5-invalid-client.png", fullPage: true });
+step("invalid client: Google's error page once, then a login button and the ID to check, no loop");
 
 await browser.close();
 if (errors.length) {
