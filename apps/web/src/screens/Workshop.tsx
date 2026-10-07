@@ -30,8 +30,9 @@ import { importFromPicker } from "./Settings";
 import { Review } from "./Review";
 import { Conflicts } from "./Conflicts";
 import { Suggestions } from "./Suggestions";
+import { ExternalSources } from "./ExternalSources";
 
-type Sub = "review" | "conflicts" | "suggestions" | null;
+type Sub = "review" | "conflicts" | "suggestions" | { kind: "external"; query: string; subjectId?: string } | null;
 
 /** The laptop part: sources in, local AI, decisions, package for the phone. */
 export function Workshop() {
@@ -42,7 +43,8 @@ export function Workshop() {
 
   if (sub === "review") return <Review onBack={() => setSub(null)} />;
   if (sub === "conflicts") return <Conflicts onBack={() => setSub(null)} />;
-  if (sub === "suggestions") return <Suggestions onBack={() => setSub(null)} />;
+  if (sub === "suggestions") return <Suggestions onBack={() => setSub(null)} onResearch={(query, subjectId) => setSub({ kind: "external", query, subjectId })} />;
+  if (sub && typeof sub === "object") return <ExternalSources onBack={() => setSub(null)} initialQuery={sub.query} {...(sub.subjectId ? { initialSubjectId: sub.subjectId } : {})} />;
 
   const toReview = counts.pending + counts.needsReview + counts.flagged;
   return (
@@ -74,6 +76,12 @@ export function Workshop() {
 
       <ImportCard />
       <ProcessingCard />
+      <Card title="Źródła z internetu">
+        <p className="muted small">Brakujące teksty przepisów (ISAP), orzeczenia (SAOS) i publikacje naukowe (OpenAlex) – jako nowe źródła z cytatem.</p>
+        <button className="btn btn-secondary" onClick={() => setSub({ kind: "external", query: "" })}>
+          Uzupełnij braki
+        </button>
+      </Card>
       <AiCard />
       <DocumentsCard />
 

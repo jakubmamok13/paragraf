@@ -404,6 +404,8 @@ export function planSession(db: Db, now = new Date(), opts: PlanOptions = {}): S
     ? [...reviews, ...added].sort(
         (a, b) =>
           (a.payload?.synthesis ? 1 : 0) - (b.payload?.synthesis ? 1 : 0) ||
+          // Comparisons ("Czym różni się…") after the parts themselves.
+          (a.type === "distinction" ? 1 : 0) - (b.type === "distinction" ? 1 : 0) ||
           (a.slot ? PART_ORDER.indexOf(a.slot) : 99) - (b.slot ? PART_ORDER.indexOf(b.slot) : 99),
       )
     : arrange(reviews, added, settings.interleaveSubjects, examDays);

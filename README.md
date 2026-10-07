@@ -11,8 +11,9 @@ na Twoich urządzeniach:
 
 Założenia i plan: [`docs/PLAN.md`](docs/PLAN.md).
 
-> Stan: **MVP gotowe (kroki 1–12)**. Następne: wersja 2 (kazusy z oceną AI,
-> pytania ustne, tryb „odróżnij”, planer egzaminacyjny, mapa przedmiotu).
+> Stan: **MVP gotowe** + źródła z internetu (ISAP, SAOS, OpenAlex), zagadnienie
+> jako system (schemat, mini-mapa, lekcja, „Odtwórz schemat”), pałac pamięci.
+> Następne: wersja 2 (kazusy z oceną AI, pytania ustne, planer egzaminacyjny).
 
 ---
 
@@ -53,6 +54,13 @@ LM Studio: włącz serwer (Developer → Start Server) i CORS, w Paragrafie wybi
 6. Co jakiś czas: na telefonie **Wyślij postęp na komputer**, na komputerze
    **Wczytaj postęp z telefonu** – trafią tam też fiszki zgłoszone jako błędne.
 
+**Źródła z internetu** (Pracownia → Uzupełnij braki; domyślnie wyłączone):
+ISAP – teksty jednolite ustaw, pobierane są tylko artykuły powołane w Twoich
+materiałach; SAOS – orzeczenia po sygnaturze; OpenAlex – streszczenia publikacji
+naukowych, gdy ustawy i orzeczenia nie wystarczą. Wychodzi tylko zapytanie, które
+widzisz; wynik staje się zwykłym źródłem z cytatem. Jeśli serwer nie pozwoli na
+zapytanie z przeglądarki, aplikacja poda link, żeby pobrać plik ręcznie.
+
 **Porównaj modele** (Pracownia → Lokalne AI): uruchamia analizę Twojej notatki
 na kilku modelach i pokazuje czas oraz odsetek treści potwierdzonych cytatem.
 
@@ -79,6 +87,26 @@ test z nich tego samego dnia. **Zgłoś błąd** w sesji zawiesza fiszkę do pop
 **Postęp**: opanowanie per przedmiot, dział i zagadnienie, czego uczyć się dziś,
 gotowość na egzamin, pewność a wynik, najtrudniejsze fiszki.
 
+## Zagadnienie jako całość
+
+Fiszki jednego zagadnienia to części jednego schematu: definicja → podstawa →
+przesłanki → skutki → wyjątki → terminy → orzecznictwo → doktryna → cel.
+- **Nowe zagadnienia** (ekran Dziś): krótka lekcja – 2 pytania wstępne, schemat
+  część po części (tekst albo czytanie na głos), od razu sprawdzenie.
+- W sesji **mini-mapa** pokazuje, którą część zagadnienia ćwiczysz; po odpowiedzi
+  **Całe zagadnienie** pokazuje cały schemat i opanowanie każdej części.
+- **Odtwórz schemat**: fiszka-synteza, która odblokowuje się, gdy przećwiczysz
+  wszystkie części.
+- Przy zatwierdzaniu widać części bez fiszki i przycisk **Uzupełnij**.
+
+## Pałac pamięci
+
+Zakładka **Pałac**: kurs metody miejsc w 9 etapach (zasada i dowody, budowa trasy,
+utrwalenie, żywe obrazy, listy słów, pojęcia prawnicze, Twoje wyliczenia,
+podtrzymanie). Każdy etap odblokowuje się po zaliczeniu poprzedniego. Wyliczenia
+umieszczone w pałacu pokazują Twoje obrazy po odpowiedzi w powtórkach.
+Research i plan kursu: [`docs/MNEMOTECHNIKI.md`](docs/MNEMOTECHNIKI.md).
+
 ## Kopia zapasowa
 
 Dane są tylko na urządzeniu. **Ustawienia → Eksportuj pełną kopię** zapisuje
@@ -94,7 +122,8 @@ npm test            # testy pakietu core (sql.js w Node)
 npm run typecheck
 npm run dev         # serwer Vite: http://localhost:5173
 npm run build       # pliki statyczne w apps/web/dist
-npm run e2e         # po build: pełny scenariusz w przeglądarce (laptop + telefon)
+npm run e2e         # po build: dwa scenariusze w przeglądarce (laptop + telefon):
+                    # MVP oraz nowe funkcje (ISAP/OpenAlex podstawione, lekcja, pałac),
                     # z atrapą modelu zamiast prawdziwej Ollamy
 ```
 

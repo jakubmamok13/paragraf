@@ -35,6 +35,15 @@ const watch = (page, who) => {
   page.on("dialog", (d) => d.accept());
 };
 const step = (s) => console.log("•", s);
+/** Marks every list item as recalled; the button disappears when the list ends. */
+const yesToAll = async (page) => {
+  for (;;) {
+    const b = page.getByRole("button", { name: "✓ Tak" });
+    if (!(await b.count())) return;
+    await b.click({ timeout: 2000 }).catch(() => {});
+    await page.waitForTimeout(80);
+  }
+};
 const upload = async (page, trigger, file) => {
   const [fc] = await Promise.all([page.waitForEvent("filechooser"), trigger()]);
   await fc.setFiles(file);
@@ -137,7 +146,7 @@ for (; n < 40; n++) {
   if (n === 0) await P.screenshot({ path: out + "/P2-question.png" });
   await P.getByRole("button", { name: ["Pewnie", "Chyba wiem", "Zgaduję"][n % 3] }).click();
   if (meta.includes("Wyliczenie")) {
-    while (await P.getByRole("button", { name: "✓ Tak" }).count()) await P.getByRole("button", { name: "✓ Tak" }).click();
+    await yesToAll(P);
   }
   await P.locator(".btn-rate").first().waitFor();
   if (n === 1) {

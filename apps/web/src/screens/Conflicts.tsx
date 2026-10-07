@@ -4,7 +4,7 @@ import { Citation, type SourceRef, SourceViewer } from "../components";
 import { useAction, useDb } from "../ui";
 import { startProcessing } from "../processing";
 
-const RANK_HINT: Record<number, string> = { 1: "tekst ustawy rozstrzyga o brzmieniu przepisu", 2: "notatki rozstrzygają o zakresie i stanowisku prowadzącego", 3: "podręcznik służy pogłębieniu" };
+const RANK_HINT: Record<number, string> = { 1: "tekst ustawy rozstrzyga o brzmieniu przepisu", 2: "notatki rozstrzygają o zakresie i stanowisku prowadzącego", 3: "podręcznik i orzecznictwo służą pogłębieniu", 4: "publikacja naukowa to najsłabsze źródło dla treści przepisu" };
 
 /** Sources that disagree: the app never picks one silently. */
 export function Conflicts({ onBack }: { onBack: () => void }) {

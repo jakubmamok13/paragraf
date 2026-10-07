@@ -29,7 +29,8 @@ export function PalaceTab() {
   const status = courseStatus(db);
   const palaces = listPalaces(db);
 
-  if (editing) return <PalaceEditor palace={editing === "new" ? null : editing} onDone={() => setEditing(null)} />;
+  // After saving, back to the course overview: it shows the stage passed and the next one unlocked.
+  if (editing) return <PalaceEditor palace={editing === "new" ? null : editing} onDone={() => (setEditing(null), setStage(null))} />;
   if (stage !== null) return <StageScreen st={status.find((s) => s.stage === stage)!} onBack={() => setStage(null)} onEditPalace={setEditing} />;
 
   const current = status.find((s) => s.unlocked && !s.done) ?? status.at(-1)!;

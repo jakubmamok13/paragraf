@@ -84,8 +84,12 @@ describe("short lesson", () => {
     const lesson = buildLesson(db, topicId)!;
     expect(lesson.prequestions).toHaveLength(2);
     expect(lesson.prequestions[0]!.slot).not.toBe(lesson.prequestions[1]!.slot);
-    const order = lesson.cards.map((c) => (c.slot ? SLOT_ORDER[c.slot]! : 99));
+    const parts = lesson.cards.filter((c) => c.type !== "distinction");
+    const order = parts.map((c) => (c.slot ? SLOT_ORDER[c.slot]! : 99));
     expect(order).toEqual([...order].sort((a, b) => a - b));
+    // "Czym różni się…" comes after the parts themselves.
+    const firstComparison = lesson.cards.findIndex((c) => c.type === "distinction");
+    if (firstComparison >= 0) expect(firstComparison).toBe(parts.length);
     expect(lesson.cards.some((c) => c.payload?.synthesis)).toBe(false);
 
     const script = lessonScript(lesson.schema);

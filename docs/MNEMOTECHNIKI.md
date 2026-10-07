@@ -1,6 +1,6 @@
 # Mnemotechniki, zagadnienia jako całość i uzupełnianie braków – research i propozycja
 
-Stan: propozycja do akceptacji (październik 2026). Nic z tego nie jest jeszcze zaimplementowane.
+Stan (7 października 2026): zaakceptowane i zaimplementowane – źródła z internetu (ISAP → SAOS → OpenAlex), zagadnienie jako system, krótka lekcja, zakładka „Pałac pamięci”. Szczegóły w sekcjach 6–7.
 
 ## 1. Co mówią badania o mnemotechnikach
 
@@ -55,8 +55,37 @@ Pierwotna zasada brzmiała: żadnej wiedzy spoza źródeł. Proponuję ją zacho
 
 **Ryzyko do sprawdzenia:** nie mogłem połączyć się z tymi serwerami ze środowiska, w którym pracuję, więc nie wiem, czy pozwalają na zapytania prosto z przeglądarki (CORS). Jeśli nie, potrzebny będzie mały pośrednik uruchamiany na Twoim komputerze obok Ollamy.
 
-## 5. Decyzje do podjęcia
+## 5. Decyzje (podjęte)
 
-1. Uzupełnianie z internetu: tylko ISAP + SAOS (opcjonalnie, domyślnie wyłączone), a ogólna sieć jako link? Czy inaczej?
-2. Pierwszy kontakt z zagadnieniem jako krótka „lekcja” w kolejności schematu, czy od początku pełne przeplatanie?
-3. Mnemotechniki: własne + propozycje AI do wyboru, czy wyłącznie własne?
+1. Internet: ISAP + SAOS; ogólna sieć jako uzupełnienie, ale oparta na materiałach naukowych → OpenAlex (streszczenia publikacji) + link do Google Scholar.
+2. Powtórki przeplatane; nowe zagadnienie zaczyna się od krótkiej lekcji (sekcja 6).
+3. Zamiast mnemotechnik przy każdej fiszce – osobna zakładka „Pałac pamięci” z kursem krok po kroku (sekcja 7).
+
+## 6. Krótka lekcja – research i projekt
+
+| Ustalenie | Źródło | Jak to wykorzystano |
+|---|---|---|
+| Pytania zadane **przed** nauką poprawiają zapamiętanie, także treści, o które nie pytano; kierują uwagę. | Carpenter i Toftness – [Psychonomic Society](https://featuredcontent.psychonomic.org/test-first-learn-later-the-power-of-pretesting-to-enhance-learning/), [Learning Scientists](https://www.learningscientists.org/blog/2017/11/2-1) | Lekcja zaczyna się od 2 pytań wstępnych z różnych części schematu. Nie wpływają na harmonogram. |
+| Czytanie i słuchanie dają ogólnie podobne zrozumienie (46 badań), ale czytanie we **własnym tempie** i przy pytaniach wymagających wnioskowania wypada lepiej. | Clinton-Lisell, *Review of Educational Research* ([PDF](https://files.eric.ed.gov/fulltext/EJ1403866.pdf)) | Domyślnie tekst; czytanie na głos (głos urządzenia, polski) jako opcja – np. w drodze. Tempo regulowane. |
+| Lepiej uczą krótkie segmenty w tempie ucznia; kluczowe elementy warto wyróżnić; narracja pomaga przy grafice. | Mayer – zasady segmentacji, sygnalizacji i modalności ([zestawienie](https://medicine.nus.edu.sg/medixperience/scholarly-article/mayers-12-principles-of-multimedia-instruction/)) | Jedna część schematu na ekran, przycisk „Dalej”; liczby i przepisy wyróżnione; przy czytaniu na głos widoczna mini-mapa zagadnienia. |
+| Przeplatanie powtórek wygrywa długoterminowo z nauką blokami. | Kornell i Bjork 2008; Rohrer i Taylor 2007 | Lekcja dotyczy tylko pierwszego kontaktu; zaraz po niej pierwsze przywołanie w kolejności schematu, a od następnego dnia powtórki są przeplatane. |
+
+Treść lekcji to wyłącznie sprawdzone pola zagadnienia (z cytatami i źródłem pod każdym punktem) – bez nowych sformułowań modelu.
+
+## 7. Pałac pamięci – kurs krok po kroku
+
+Dowody: metaanaliza 13 badań RCT, efekt g = 0,65 ([Twomey i Kroneisen 2021](https://journals.sagepub.com/doi/10.1177/1747021821993457)); 6 tygodni treningu → trwała poprawa po 4 miesiącach ([Wagner, Dresler i in. 2021](https://www.biorxiv.org/content/10.1101/2020.04.29.067561v1.abstract)); obrazy interaktywne ok. dwukrotnie poprawiają zapamiętanie par (Bower 1970, omówione w [Legge i in. 2012](https://www.psych.ualberta.ca/~cml/papers/LeggEtal2012.pdf)); studenci z pałacem na znanej trasie lepiej odtwarzali listy ([McCabe 2015](https://pubmed.ncbi.nlm.nih.gov/25039085)); zastosowanie do treści abstrakcyjnych w medycynie (Qureshi 2014).
+
+| Etap | Cel | Zaliczenie |
+|---|---|---|
+| 1. Na czym polega | Zasada, dowody, ograniczenia | Quiz 3/3 |
+| 2. Zbuduj pałac | Znana trasa, ≥10 różnych, stałych miejsc w kolejności chodzenia | Pałac z ≥10 miejscami |
+| 3. Utrwal trasę | Trasa automatyczna, zanim cokolwiek się na niej położy | 2× bezbłędnie w przód, 1× wstecz |
+| 4. Żywe obrazy | Interakcja z miejscem, przesada, ruch, zmysły | 5 obrazów z ≥3/4 cech |
+| 5. Lista 10 słów | Kodowanie ~20 s/pozycję, 30 s liczenia (czyści pamięć krótkotrwałą), przywołanie z trasy | ≥9/10 dwa razy |
+| 6. Dłuższe listy | Trasa ≥20 miejsc | ≥18/20 |
+| 7. Pojęcia prawnicze | Zastępniki konkretne (brzmienie lub sens), własne skojarzenia | ≥7/8 |
+| 8. Twoje wyliczenia | Pozycje fiszki-wyliczenia na miejscach z własnymi obrazami; obrazy pokazują się po odpowiedzi w powtórkach | Bezbłędne przywołanie z trasy |
+| 9. Podtrzymanie | Przejście trasy raz w tygodniu; nowa trasa dla nowego przedmiotu | Etap otwarty |
+
+Postęp kursu jest zapisywany na telefonie i trafia na komputer z paczką postępu.

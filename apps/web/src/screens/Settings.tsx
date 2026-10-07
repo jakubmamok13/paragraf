@@ -109,6 +109,35 @@ export function Settings() {
         </div>
       </Card>
 
+      <Card title="Źródła z internetu">
+        <label className="check">
+          <input type="checkbox" checked={s.external.enabled} onChange={(e) => void act(() => updateSettings(db, { external: { ...s.external, enabled: e.target.checked } }))} />
+          Uzupełniaj braki z oficjalnych i naukowych źródeł
+        </label>
+        <p className="muted small">
+          Kolejność: ISAP (teksty ustaw) → SAOS (orzeczenia) → OpenAlex (publikacje naukowe). Do internetu wychodzi tylko zapytanie, które widzisz przed
+          wysłaniem (np. „Kodeks cywilny”, sygnatura, hasło) – nigdy treść Twoich notatek. To, co przyjdzie, staje się zwykłym źródłem z cytatem.
+        </p>
+        <Field label="E-mail dla OpenAlex (opcjonalnie)" hint="Przyspiesza odpowiedzi OpenAlex; nigdzie indziej nie jest wysyłany.">
+          <input
+            type="email"
+            defaultValue={s.external.email}
+            onBlur={(e) => e.target.value !== s.external.email && void act(() => updateSettings(db, { external: { ...s.external, email: e.target.value.trim() } }))}
+          />
+        </Field>
+      </Card>
+
+      <Card title="Lekcje">
+        <label className="check">
+          <input type="checkbox" checked={s.lessonAudio} onChange={(e) => void act(() => updateSettings(db, { lessonAudio: e.target.checked }))} />
+          Czytaj lekcje na głos (głos urządzenia)
+        </label>
+        <Field label={`Tempo czytania: ${s.lessonRate.toLocaleString("pl-PL")}×`}>
+          <input type="range" min={0.6} max={1.6} step={0.1} value={s.lessonRate} onChange={(e) => void act(() => updateSettings(db, { lessonRate: Number(e.target.value) }))} />
+        </Field>
+        <p className="muted small">Domyślnie lekcja jest do czytania: we własnym tempie czytanie daje co najmniej takie zrozumienie jak słuchanie. Słuchanie przydaje się, gdy nie możesz patrzeć w ekran.</p>
+      </Card>
+
       <Card title="Pracownia (komputer)">
         <label className="check">
           <input type="checkbox" checked={s.autoProcess} onChange={(e) => void act(() => updateSettings(db, { autoProcess: e.target.checked }))} />

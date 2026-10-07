@@ -10,7 +10,7 @@ const KIND_LABEL: Record<string, string> = {
 };
 
 /** What the AI thought was missing, and what it wrote but could not back with a source. Never turned into cards automatically. */
-export function Suggestions({ onBack }: { onBack: () => void }) {
+export function Suggestions({ onBack, onResearch }: { onBack: () => void; onResearch: (query: string, subjectId: string) => void }) {
   const { db } = useDb();
   const act = useAction();
   const [source, setSource] = useState<SourceRef | null>(null);
@@ -39,6 +39,12 @@ export function Suggestions({ onBack }: { onBack: () => void }) {
                   Fragment źródła
                 </button>
               )}
+              <button
+                className="btn btn-ghost btn-small"
+                onClick={() => onResearch(`${s.topicName ? `${s.topicName} ` : ""}${s.text.replace(/^[^:]+:\s*/, "").replace(/\(.*?\)/g, "").slice(0, 120)}`.trim(), s.subjectId)}
+              >
+                Szukaj w źródłach
+              </button>
               <button className="btn btn-ghost btn-small" onClick={() => void act(() => dismissSuggestion(db, s.id))}>
                 Odrzuć
               </button>
