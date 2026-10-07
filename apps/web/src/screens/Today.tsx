@@ -1,5 +1,6 @@
 import { daysBetween, EXAM_FORMATS, EXAM_KINDS, lessonCandidates, listSubjects, localToday, planSession, recentLectures, type SessionPlan } from "@paragraf/core";
 import { Card, plDays, useDb } from "../ui";
+import { SyncBanner } from "./DriveSync";
 
 export function Today({
   goTo,
@@ -41,6 +42,8 @@ export function Today({
         </button>
         <p className="hero-note">{note}</p>
       </section>
+
+      <SyncBanner />
 
       {lectures.map((l) => (
         <Card key={l.documentId} title="Po wykładzie">

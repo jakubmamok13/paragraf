@@ -158,4 +158,9 @@ export const MIGRATIONS: string[] = [
     locus_id TEXT NOT NULL REFERENCES locus(id) ON DELETE CASCADE, image TEXT NOT NULL DEFAULT '',
     updated_at TEXT NOT NULL, UNIQUE (material_id, item_index));
   `,
+  // v5: synchronisation through a shared folder (Google Drive). Settings merge key by key,
+  // the newer value wins.
+  `
+  ALTER TABLE setting ADD COLUMN updated_at TEXT NOT NULL DEFAULT '';
+  `,
 ];

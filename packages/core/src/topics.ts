@@ -5,6 +5,7 @@
 import { type Db, newId, nowIso } from "./db";
 import type { FieldType } from "./pipeline";
 import { planSession, type PlannedCard, recallOf } from "./srs";
+import { recordTombstone } from "./subjects";
 
 export interface SlotInfo {
   slot: FieldType;
@@ -131,6 +132,9 @@ export function ensureSynthesis(db: Db, topicId: string): string | null {
     if (existing) {
       if (existing.payload_json === JSON.stringify(payload)) return;
       db.run("UPDATE material SET payload_json = ?, updated_at = ? WHERE id = ?", JSON.stringify(payload), now, existing.id);
+      for (const c of db.all<{ id: string }>("SELECT id FROM citation WHERE owner_type = 'material' AND owner_id = ?", existing.id)) {
+        recordTombstone(db, "citation", c.id);
+      }
       db.run("DELETE FROM citation WHERE owner_type = 'material' AND owner_id = ?", existing.id);
       db.run("DELETE FROM material_field WHERE material_id = ?", existing.id);
     } else {

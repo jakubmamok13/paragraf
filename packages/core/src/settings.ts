@@ -1,4 +1,7 @@
-import type { Db } from "./db";
+import { type Db, nowIso } from "./db";
+
+/** Settings that belong to one device and never travel with synchronisation (the laptop's AI server). */
+export const DEVICE_SETTINGS: readonly string[] = ["ai"];
 
 export type AiProvider = "ollama" | "openai";
 
@@ -97,12 +100,20 @@ export function updateSettings(db: Db, patch: Partial<Settings>): Settings {
     next[key] = key === "targetRetention" ? clamp(v, range) : Math.round(clamp(v, range));
   }
   next.ai.baseUrl = next.ai.baseUrl.trim().replace(/\/+$/, "");
+  // Only changed keys get a new timestamp, so a change made on another device to a
+  // different setting is not overwritten when the two merge.
+  const stored = new Map(db.all<{ key: string; value_json: string }>("SELECT key, value_json FROM setting").map((r) => [r.key, r.value_json]));
+  const now = nowIso();
   db.tx(() => {
     for (const [key, value] of Object.entries(next)) {
+      const json = JSON.stringify(value);
+      // A default that was never changed is not written: it must not win over a value set elsewhere.
+      if ((stored.get(key) ?? JSON.stringify(DEFAULT_SETTINGS[key as keyof Settings])) === json) continue;
       db.run(
-        "INSERT INTO setting (key, value_json) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json",
+        "INSERT INTO setting (key, value_json, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at",
         key,
-        JSON.stringify(value),
+        json,
+        now,
       );
     }
   });

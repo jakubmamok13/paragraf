@@ -9,6 +9,7 @@ import { Session } from "./screens/Session";
 import { Progress } from "./screens/Progress";
 import { Lesson } from "./screens/Lesson";
 import { PalaceTab } from "./screens/Palace";
+import { SyncStarter } from "./screens/DriveSync";
 import type { SessionPlan } from "@paragraf/core";
 
 type Tab = "today" | "subjects" | "workshop" | "progress" | "palace" | "settings";
@@ -57,6 +58,7 @@ export function App() {
 
   return (
     <DbProvider db={rt.db}>
+      <SyncStarter />
       <main className="main">
         {tab === "today" && <Today goTo={setTab} onStart={start} onLesson={setLesson} />}
         {tab === "palace" && <PalaceTab />}

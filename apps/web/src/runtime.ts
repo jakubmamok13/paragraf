@@ -1,5 +1,6 @@
 import initSqlJs from "sql.js";
 import wasmUrl from "sql.js/dist/sql-wasm-browser.wasm?url";
+import { noteLocalWrite } from "./sync";
 import { Db, loadPrompts, type PromptSet, recoverJobs, withOverrides, getSettings, type ParseDeps, type PdfJs } from "@paragraf/core";
 
 // Everything stays on this device: SQLite (sql.js) in memory, saved to
@@ -51,9 +52,11 @@ async function start(): Promise<Runtime> {
     );
     return saving;
   };
+  let booting = true;
   const db: Db = new Db(bytes ? new SQL.Database(bytes) : new SQL.Database(), () => {
     clearTimeout(timer);
     timer = setTimeout(() => void flush(), 300);
+    if (!booting) noteLocalWrite();
   });
   // iOS may stop the app any time after it leaves the screen: save right away.
   const saveNow = () => {
@@ -64,6 +67,7 @@ async function start(): Promise<Runtime> {
   void navigator.storage?.persist?.().catch(() => false);
   // A run cut off by closing the app goes back to the queue.
   recoverJobs(db);
+  booting = false;
   return { db, flush };
 }
 

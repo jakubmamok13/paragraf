@@ -13,8 +13,9 @@ import {
 } from "@paragraf/core";
 import { Card, Field, useAction, useDb, useToast } from "../ui";
 import { BUNDLED_PROMPTS, pickFiles, saveFile } from "../runtime";
+import { DriveCard } from "./DriveSync";
 
-const KIND_LABEL = { content: "treść", progress: "postęp nauki", backup: "pełna kopia" } as const;
+const KIND_LABEL = { content: "treść", progress: "postęp nauki", backup: "pełna kopia", sync: "synchronizacja" } as const;
 
 export async function importFromPicker(db: Db, toast: (t: string, k?: "ok" | "error") => void, changed: () => void): Promise<void> {
   const [file] = await pickFiles(".gz,.json,application/gzip,application/json");
@@ -86,9 +87,11 @@ export function Settings() {
         </label>
       </Card>
 
+      <DriveCard />
+
       <Card title="Paczki i kopia zapasowa">
         <p className="muted small">
-          Dane są tylko na tym urządzeniu. Rób kopię co jakiś czas i trzymaj ją np. w iCloud Drive.
+          Bez Dysku Google dane są tylko na tym urządzeniu. Paczki to ręczna alternatywa: plik, który sam przenosisz.
         </p>
         <div className="row-wrap">
           <button className="btn btn-secondary" onClick={() => void importFromPicker(db, toast, changed)}>

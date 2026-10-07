@@ -4,14 +4,17 @@
 //   content   laptop → phone   subjects, sources, topics, materials
 //   progress  phone → laptop   review state and history
 //   backup    either           everything; restoring replaces the database
+//   sync      every device     content, progress and shared settings, merged both ways
+//                              (one file per device in a shared Google Drive folder)
 //
 // Merging is by row id. Rows with updated_at: the newer one wins. Rows without
 // it (links, logs) are inserted once. A content package never touches review
 // state, and a progress package never touches content.
 import { gunzipSync, gzipSync, strFromU8, strToU8 } from "fflate";
 import { type Db, type Row, nowIso } from "./db";
+import { DEVICE_SETTINGS } from "./settings";
 
-export type PackageKind = "content" | "progress" | "backup";
+export type PackageKind = "content" | "progress" | "backup" | "sync";
 
 export interface Package {
   format: "paragraf-package";
@@ -45,11 +48,14 @@ const CONTENT_TABLES = [
 // The memory palace course happens on the phone, so it travels with the progress.
 const PROGRESS_TABLES = ["review_item", "review_log", "palace", "locus", "palace_drill", "palace_placement"] as const;
 const BACKUP_TABLES = ["setting", ...CONTENT_TABLES, ...PROGRESS_TABLES, "ai_call"] as const;
+// The AI cache stays on the laptop: the other devices cannot use it.
+const SYNC_TABLES = ["setting", ...CONTENT_TABLES, ...PROGRESS_TABLES] as const;
 
 const TABLES: Record<PackageKind, readonly string[]> = {
   content: CONTENT_TABLES,
   progress: PROGRESS_TABLES,
   backup: BACKUP_TABLES,
+  sync: SYNC_TABLES,
 };
 
 export interface ExportOptions {
@@ -63,7 +69,11 @@ export interface ExportOptions {
 export function exportPackage(db: Db, kind: PackageKind, opts: ExportOptions = {}): Package {
   const tables: Record<string, Row[]> = {};
   for (const t of TABLES[kind]) {
-    if (t === "source_chunk" && kind === "content" && !opts.allChunks) {
+    if (t === "setting" && kind === "sync") {
+      tables[t] = db
+        .all("SELECT * FROM setting")
+        .filter((r) => !DEVICE_SETTINGS.includes(String(r.key)));
+    } else if (t === "source_chunk" && kind === "content" && !opts.allChunks) {
       tables[t] = db.all("SELECT * FROM source_chunk WHERE id IN (SELECT chunk_id FROM citation) ORDER BY document_id, ord");
     } else {
       tables[t] = db.all(`SELECT * FROM ${t}`);
@@ -91,7 +101,7 @@ export function parsePackage(text: string): Package {
   } catch {
     throw new Error("To nie jest plik paczki Paragrafu (nieprawidłowy JSON).");
   }
-  if (p?.format !== "paragraf-package" || !["content", "progress", "backup"].includes(p.kind) || typeof p.tables !== "object") {
+  if (p?.format !== "paragraf-package" || !["content", "progress", "backup", "sync"].includes(p.kind) || typeof p.tables !== "object") {
     throw new Error("To nie jest plik paczki Paragrafu.");
   }
   return p as Package;
@@ -145,6 +155,10 @@ export function importPackage(db: Db, pkg: Package): ImportResult {
 
       for (const original of rows) {
         let row = original;
+        if (table === "setting" && DEVICE_SETTINGS.includes(String(row.key)) && pkg.kind !== "backup") {
+          result.skipped++;
+          continue;
+        }
         if (table === "review_log" && itemRemap.has(String(row.review_item_id))) {
           row = { ...row, review_item_id: itemRemap.get(String(row.review_item_id)) };
         }
@@ -198,7 +212,7 @@ export function importPackage(db: Db, pkg: Package): ImportResult {
             ...use.map((c) => row[c]),
           );
           result.inserted++;
-        } else if (hasUpdatedAt && String(row.updated_at) > String(existing.updated_at)) {
+        } else if (hasUpdatedAt && String(row.updated_at ?? "") > String(existing.updated_at ?? "")) {
           // UPDATE, never INSERT OR REPLACE: a replace would cascade-delete children.
           const set = use.filter((c) => !pk.includes(c));
           db.run(
@@ -230,7 +244,7 @@ function primaryKeyOf(db: Db, table: string): string[] {
 
 export function packageFileName(kind: PackageKind, d = new Date()): string {
   const stamp = d.toISOString().slice(0, 16).replace(/[:T]/g, "-");
-  const label = { content: "tresc", progress: "postep", backup: "kopia" }[kind];
+  const label = { content: "tresc", progress: "postep", backup: "kopia", sync: "synchronizacja" }[kind];
   return `paragraf-${label}-${stamp}.json.gz`;
 }
 

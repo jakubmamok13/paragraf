@@ -107,10 +107,18 @@ podtrzymanie). Każdy etap odblokowuje się po zaliczeniu poprzedniego. Wyliczen
 umieszczone w pałacu pokazują Twoje obrazy po odpowiedzi w powtórkach.
 Research i plan kursu: [`docs/MNEMOTECHNIKI.md`](docs/MNEMOTECHNIKI.md).
 
-## Kopia zapasowa
+## Dysk Google: kopia i synchronizacja
 
-Dane są tylko na urządzeniu. **Ustawienia → Eksportuj pełną kopię** zapisuje
-wszystko do pliku; wczytanie kopii zastępuje dane na urządzeniu.
+**Ustawienia → Dysk Google**: fiszki, postęp, pałace i ustawienia same zapisują
+się w wybranym folderze na Twoim Dysku Google. Inne urządzenie po wskazaniu tego
+samego folderu wczytuje wszystko i dalej się synchronizuje. Każde urządzenie ma
+w folderze własny plik, a pliki pozostałych urządzeń scala ze swoimi danymi.
+Konfiguracja i szczegóły: [`docs/DYSK-GOOGLE.md`](docs/DYSK-GOOGLE.md).
+
+## Kopia zapasowa bez Dysku
+
+**Ustawienia → Eksportuj pełną kopię** zapisuje wszystko do pliku; wczytanie
+kopii zastępuje dane na urządzeniu.
 
 ---
 
@@ -122,7 +130,7 @@ npm test            # testy pakietu core (sql.js w Node)
 npm run typecheck
 npm run dev         # serwer Vite: http://localhost:5173
 npm run build       # pliki statyczne w apps/web/dist
-npm run e2e         # po build: dwa scenariusze w przeglądarce (laptop + telefon):
+npm run e2e         # po build: trzy scenariusze w przeglądarce (laptop + telefon, w tym synchronizacja z atrapą Dysku):
                     # MVP oraz nowe funkcje (ISAP/OpenAlex podstawione, lekcja, pałac),
                     # z atrapą modelu zamiast prawdziwej Ollamy
 ```

@@ -10,6 +10,7 @@ import { type Card, type FSRS, fsrs, type Grade, Rating, State } from "ts-fsrs";
 import { type Db, newId } from "./db";
 import { type MaterialType, SESSION_TYPES, subKeys } from "./materials";
 import { getSettings } from "./settings";
+import { recordTombstone } from "./subjects";
 
 /** A study day ends at 4:00 local time, so a late evening session still counts as "today". */
 export const DAY_START_HOUR = 4;
@@ -136,6 +137,9 @@ export function syncReviewItems(db: Db, now = new Date()): { created: number; re
       }
       for (const k of have) {
         if (keys.includes(k)) continue;
+        for (const r of db.all<{ id: string }>("SELECT id FROM review_item WHERE material_id = ? AND sub_key = ?", m.id, k)) {
+          recordTombstone(db, "review_item", r.id);
+        }
         removed += db.run("DELETE FROM review_item WHERE material_id = ? AND sub_key = ?", m.id, k);
       }
     }
@@ -604,6 +608,7 @@ export function undoAnswer(db: Db, logId: string): void {
       );
     }
     db.run("DELETE FROM review_log WHERE id = ?", logId);
+    recordTombstone(db, "review_log", logId);
   });
 }
 

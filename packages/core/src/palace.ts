@@ -12,6 +12,7 @@
 // - it works best for ordered lists; it costs time and does not replace
 //   retrieval practice (Dunlosky et al. 2013), so it complements the cards.
 import { type Db, newId, nowIso } from "./db";
+import { recordTombstone } from "./subjects";
 
 // ---------- palaces ----------
 
@@ -70,13 +71,19 @@ export function savePalace(db: Db, input: { id?: string; name: string; descripti
       if (prev) db.run("UPDATE locus SET ord = ?, name = ?, updated_at = ? WHERE id = ?", i, n, now, prev.id);
       else db.run("INSERT INTO locus (id, palace_id, ord, name, updated_at) VALUES (?, ?, ?, ?, ?)", newId(), id, i, n, now);
     });
-    for (const extra of existing.slice(loci.length)) db.run("DELETE FROM locus WHERE id = ?", extra.id);
+    for (const extra of existing.slice(loci.length)) {
+      db.run("DELETE FROM locus WHERE id = ?", extra.id);
+      recordTombstone(db, "locus", extra.id);
+    }
   });
   return id;
 }
 
 export function deletePalace(db: Db, id: string): void {
-  db.run("DELETE FROM palace WHERE id = ?", id);
+  db.tx(() => {
+    db.run("DELETE FROM palace WHERE id = ?", id);
+    recordTombstone(db, "palace", id);
+  });
 }
 
 // ---------- word banks ----------
@@ -234,6 +241,9 @@ export function placeList(db: Db, input: { materialId: string; palaceId: string;
   }
   const now = nowIso();
   db.tx(() => {
+    for (const p of db.all<{ id: string }>("SELECT id FROM palace_placement WHERE material_id = ?", input.materialId)) {
+      recordTombstone(db, "palace_placement", p.id);
+    }
     db.run("DELETE FROM palace_placement WHERE material_id = ?", input.materialId);
     for (const it of input.items) {
       db.run(
