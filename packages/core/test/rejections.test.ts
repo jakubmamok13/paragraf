@@ -4,7 +4,7 @@
 // reason and the closest sentence of the source shown.
 import initSqlJs from "sql.js";
 import { describe, expect, it } from "vitest";
-import { createSubject, Db, importDocument, listSuggestions, recheckRejected, validateExtraction } from "../src";
+import { createSubject, Db, dismissAllSuggestions, importDocument, listSuggestions, recheckRejected, validateExtraction } from "../src";
 
 const claim = "Proces karny to system organizacyjny sądownictwa karnego, który obejmuje etapy od zgłoszenia przestępstwa do jego rozstrzygnięcia.";
 const out = (text: string, quote = text) => ({ topics: [{ name: "Proces karny", fields: [{ type: "definition", definition_kind: "doctrinal", text, quote }] }] }) as any;
@@ -76,5 +76,21 @@ describe("checking rejected fields again", () => {
     expect(listSuggestions(db)).toHaveLength(0);
     expect(db.get<{ p: string | null }>("SELECT processed_at AS p FROM source_chunk WHERE id = ?", chunk.id)!.p).toBeNull();
     expect(db.get<{ n: number }>("SELECT COUNT(*) AS n FROM job WHERE document_id = ? AND kind = 'extract' AND status = 'queued'", documentId)!.n).toBe(1);
+  });
+});
+
+describe("dismissing all suggestions", () => {
+  it("closes every open one, or only one subject's", async () => {
+    const SQL = await initSqlJs();
+    const db = new Db(new SQL.Database());
+    const a = createSubject(db, { name: "Prawo karne", exams: [] });
+    const b = createSubject(db, { name: "Prawo cywilne", exams: [] });
+    for (const [id, s] of [["g1", a.id], ["g2", a.id], ["g3", b.id]] as const) {
+      db.run("INSERT INTO suggestion (id, subject_id, kind, text, created_at, updated_at) VALUES (?, ?, 'gap', ?, '', '')", id, s, id);
+    }
+    expect(dismissAllSuggestions(db, a.id)).toBe(2);
+    expect(listSuggestions(db).map((s) => s.id)).toEqual(["g3"]);
+    expect(dismissAllSuggestions(db)).toBe(1);
+    expect(listSuggestions(db)).toHaveLength(0);
   });
 });

@@ -122,6 +122,9 @@ await L.getByRole("button", { name: "Pracownia" }).click();
 
 await L.locator(".todo", { hasText: "sugestie" }).click();
 await L.screenshot({ path: out + "/L6-suggestions.png", fullPage: true });
+await L.getByRole("button", { name: /^Odrzuć wszystkie \(\d+\)$/ }).click();
+await L.getByText("Brak sugestii.").waitFor();
+step("suggestions dismissed at once");
 await L.getByRole("button", { name: "← Wróć" }).click();
 
 // Model comparison.

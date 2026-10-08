@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { dismissSuggestion, listSuggestions, recheckRejected } from "@paragraf/core";
+import { dismissAllSuggestions, dismissSuggestion, listSuggestions, recheckRejected } from "@paragraf/core";
 import { type SourceRef, SourceViewer } from "../components";
 import { useAction, useDb } from "../ui";
 import { startProcessing } from "../processing";
@@ -43,19 +43,30 @@ export function Suggestions({
         Tu trafia to, czego AI nie mogło potwierdzić zdaniem ze źródła, i to, czego według niego brakuje. Fiszki powstają tylko z tego, co jest w Twoich
         źródłach, bo AI potrafi napisać przekonującą, ale błędną definicję. Przy każdej pozycji widać, co w źródle było najbliżej.
       </p>
-      {rejectedCount > 0 && (
+      {items.length > 0 && (
         <div className="row-wrap">
+          {rejectedCount > 0 && (
+            <button
+              className="btn btn-secondary"
+              onClick={() =>
+                void act(() => {
+                  const r = recheckRejected(db);
+                  void startProcessing(db, changed);
+                  return r;
+                }, "Fragmenty z odrzuconymi pozycjami zostaną przeczytane ponownie. To, co się potwierdzi, trafi do zatwierdzenia.")
+              }
+            >
+              Sprawdź ponownie odrzucone ({rejectedCount})
+            </button>
+          )}
           <button
-            className="btn btn-secondary"
+            className="btn btn-ghost danger"
             onClick={() =>
-              void act(() => {
-                const r = recheckRejected(db);
-                void startProcessing(db, changed);
-                return r;
-              }, "Fragmenty z odrzuconymi pozycjami zostaną przeczytane ponownie. To, co się potwierdzi, trafi do zatwierdzenia.")
+              confirm(`Odrzucić wszystkie sugestie (${items.length})? Nie wpływa to na zagadnienia ani fiszki.`) &&
+              void act(() => dismissAllSuggestions(db), `Odrzucono ${items.length}.`)
             }
           >
-            Sprawdź ponownie odrzucone ({rejectedCount})
+            Odrzuć wszystkie ({items.length})
           </button>
         </div>
       )}

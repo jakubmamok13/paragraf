@@ -129,6 +129,15 @@ export function dismissSuggestion(db: Db, id: string): void {
   db.run("UPDATE suggestion SET status = 'dismissed', updated_at = ? WHERE id = ?", nowIso(), id);
 }
 
+/** Dismisses every open suggestion (of one subject, if given). Returns how many. */
+export function dismissAllSuggestions(db: Db, subjectId?: string): number {
+  return db.run(
+    `UPDATE suggestion SET status = 'dismissed', updated_at = ? WHERE status = 'open' ${subjectId ? "AND subject_id = ?" : ""}`,
+    nowIso(),
+    ...(subjectId ? [subjectId] : []),
+  );
+}
+
 // ---------- conflicts ----------
 
 export interface ConflictCandidate {
