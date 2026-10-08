@@ -10,14 +10,25 @@ const KINDS: { id: Kind; label: string }[] = [
 ];
 
 /** A card written by hand, so learning can start before the Workshop processes any source. */
-export function AddCard({ subjectId, subjectName, onDone }: { subjectId: string; subjectName: string; onDone: () => void }) {
+export function AddCard({
+  subjectId,
+  subjectName,
+  onDone,
+  initial,
+}: {
+  subjectId: string;
+  subjectName: string;
+  onDone: () => void;
+  /** Prefilled from an AI suggestion that no source confirmed: you check and own it. */
+  initial?: { topic: string; q: string; a: string; note: string };
+}) {
   const { db } = useDb();
   const act = useAction();
   const toast = useToast();
   const [kind, setKind] = useState<Kind>("qa");
-  const [topic, setTopic] = useState("");
-  const [q, setQ] = useState("");
-  const [a, setA] = useState("");
+  const [topic, setTopic] = useState(initial?.topic ?? "");
+  const [q, setQ] = useState(initial?.q ?? "");
+  const [a, setA] = useState(initial?.a ?? "");
   const [text, setText] = useState("");
   const [prompt, setPrompt] = useState("");
   const [items, setItems] = useState("");
@@ -56,6 +67,7 @@ export function AddCard({ subjectId, subjectName, onDone }: { subjectId: string;
         <h1>Nowa fiszka</h1>
       </div>
       <p className="muted small">{subjectName}. Jedna fiszka sprawdza jedną rzecz.</p>
+      {initial && <p className="status status-warn small">{initial.note}</p>}
 
       <div className="segmented">
         {KINDS.map((k) => (

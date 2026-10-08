@@ -10,7 +10,7 @@ import { AiError, chatJson, type FetchFn } from "./ai";
 import type { AiSettings } from "./settings";
 import { type Db, newId, nowIso } from "./db";
 import { type DocumentKind, DOCUMENT_KIND_LABEL, getChunk, SOURCE_RANK, sha256Hex } from "./documents";
-import { extractProvisions, locateQuote, supportingPassage, normalizeForMatch, numbersIn, provisionKey, SearchIndex, tokenize, unsupportedFacts } from "./legal";
+import { closestPassage, extractProvisions, locateQuote, supportingPassage, normalizeForMatch, numbersIn, provisionKey, SearchIndex, tokenize, unsupportedFacts } from "./legal";
 import { checkMaterial, type MaterialType } from "./materials";
 import type { PromptSet } from "./prompts";
 import { getSettings } from "./settings";
@@ -235,12 +235,79 @@ export interface ValidatedTopic {
   name: string;
   aliases: string[];
   emphasized: boolean;
-  fields: { type: FieldType; definitionKind: string; text: string; quote: string; start: number; end: number }[];
+  fields: {
+    type: FieldType;
+    definitionKind: string;
+    text: string;
+    quote: string;
+    start: number;
+    end: number;
+    /** The quote is in the fragment before or after this one (a sentence cut by the fragment's edge). */
+    where: "here" | "before" | "after";
+  }[];
   relations: { type: string; target: string }[];
 }
 
-/** Keeps only fields whose quote is in the fragment and whose numbers and provisions come from it. */
-export function validateExtraction(out: ExtractOutput, chunkText: string): { topics: ValidatedTopic[]; rejected: { topic: string; text: string; reason: string }[] } {
+/** How much of the neighbouring fragments is searched when a quote is not in the fragment itself. */
+const EDGE = 1200;
+
+/**
+ * Finds what backs a field: the model's quote, else its claim copied from the
+ * text, else the sentence holding most of the claim's words. First in the
+ * fragment, then across its edges: a sentence (or a paragraph running over a
+ * page) may be cut between two fragments.
+ */
+function locateField(
+  f: { quote?: string; text: string },
+  chunkText: string,
+  near: { before?: string; after?: string },
+): { start: number; end: number; text: string; where: "here" | "before" | "after" } | null {
+  const find = (t: string) => locateQuote(f.quote ?? "", t) ?? locateQuote(f.text, t) ?? supportingPassage(f.text, t);
+  const here = find(chunkText);
+  if (here) return { ...here, where: "here" };
+  if (!near.before && !near.after) return null;
+  const before = (near.before ?? "").slice(-EDGE);
+  const after = (near.after ?? "").slice(0, EDGE);
+  const joined = `${before}\n${chunkText}\n${after}`;
+  const loc = find(joined);
+  if (!loc) return null;
+  const from = before.length + 1;
+  const to = from + chunkText.length;
+  const text = loc.text.replace(/\s*\n\s*/g, (m) => (m.includes("\n\n") ? "\n\n" : "\n"));
+  if (loc.end <= from) {
+    const offset = (near.before ?? "").length - before.length;
+    return { start: offset + loc.start, end: offset + loc.end, text, where: "before" };
+  }
+  if (loc.start >= to) return { start: loc.start - to - 1, end: loc.end - to - 1, text, where: "after" };
+  // Across an edge: cited in this fragment (the part in it), quoted in full.
+  return { start: Math.max(0, loc.start - from), end: Math.min(chunkText.length, loc.end - from), text, where: "here" };
+}
+
+/** Why a field was not accepted, with what the source says closest to it. */
+function rejectionReason(f: { quote?: string; text: string }, chunkText: string): string {
+  const quote = f.quote?.trim() ?? "";
+  const parts = ["nie znaleziono w źródle zdania, które to potwierdza"];
+  if (quote && normalizeForMatch(quote).startsWith(normalizeForMatch(f.text).slice(0, 60))) {
+    parts.push("model podał jako cytat własne zdanie – zwykle znaczy to, że pisał z własnej wiedzy, a nie z fragmentu");
+  } else if (quote) {
+    parts.push(`cytat modelu: „${quote.length > 400 ? `${quote.slice(0, 400)}…` : quote}”`);
+  }
+  const close = closestPassage(f.text, chunkText);
+  if (close && close.score >= 0.25) {
+    const t = close.text.replace(/\s+/g, " ").replace(/^[\s:;,.–—-]+/, "");
+    parts.push(`najbliżej w źródle (${Math.round(close.score * 100)}% słów): „${t.length > 300 ? `${t.slice(0, 300)}…` : t}”`);
+  } else {
+    parts.push("fragment nie zawiera zdania choćby częściowo podobnego");
+  }
+  return parts.join("; ");
+}
+
+/** Keeps only fields whose quote is in the source and whose numbers and provisions come from it. */
+export function validateExtraction(
+  out: ExtractOutput,
+  chunkText: string,
+  near: { before?: string; after?: string } = {},
+): { topics: ValidatedTopic[]; rejected: { topic: string; text: string; reason: string }[] } {
   const topics: ValidatedTopic[] = [];
   const rejected: { topic: string; text: string; reason: string }[] = [];
   for (const t of out?.topics ?? []) {
@@ -249,19 +316,18 @@ export function validateExtraction(out: ExtractOutput, chunkText: string): { top
     const fields: ValidatedTopic["fields"] = [];
     for (const f of t.fields ?? []) {
       if (!FIELD_TYPES.includes(f?.type) || !f.text?.trim()) continue;
-      // The model's quote, else its claim copied from the text, else the sentence that backs the claim.
-      const loc = locateQuote(f.quote ?? "", chunkText) ?? locateQuote(f.text, chunkText) ?? supportingPassage(f.text, chunkText);
+      const loc = locateField(f, chunkText, near);
       if (!loc) {
-        const said = f.quote?.trim() ? `; cytat modelu: „${f.quote.trim().slice(0, 120)}”` : "";
-        rejected.push({ topic: name, text: f.text, reason: `nie znaleziono w źródle zdania, które to potwierdza${said}` });
+        rejected.push({ topic: name, text: f.text, reason: rejectionReason(f, chunkText) });
         continue;
       }
-      const bad = unsupportedFacts(f.text, chunkText);
+      // Numbers and provisions must come from the fragment, or from the cut sentence it continues.
+      const bad = unsupportedFacts(f.text, loc.where === "here" && loc.text.length <= chunkText.length && chunkText.includes(loc.text) ? chunkText : `${chunkText}\n${loc.text}`);
       if (bad.length) {
         rejected.push({ topic: name, text: f.text, reason: `${bad.join(", ")} – tego nie ma w źródle` });
         continue;
       }
-      fields.push({ type: f.type, definitionKind: f.type === "definition" ? f.definition_kind : "none", text: f.text.trim(), quote: loc.text, start: loc.start, end: loc.end });
+      fields.push({ type: f.type, definitionKind: f.type === "definition" ? f.definition_kind : "none", text: f.text.trim(), quote: loc.text, start: loc.start, end: loc.end, where: loc.where });
     }
     if (!fields.length) continue;
     topics.push({
@@ -315,7 +381,11 @@ export async function processChunk(db: Db, ctx: PipelineContext, chunkId: string
   if (!chunk) throw new Error("Nie ma takiego fragmentu.");
   const { user, subjectId, docKind } = extractMessage(db, chunkId);
   const out = await callAi<ExtractOutput>(db, ctx, "extract-topics", user, EXTRACT_SCHEMA);
-  const { topics, rejected } = validateExtraction(out, chunk.text);
+  const neighbour = (ord: number) =>
+    db.get<{ id: string; text: string }>("SELECT id, text FROM source_chunk WHERE document_id = ? AND ord = ?", chunk.documentId, ord);
+  const prev = neighbour(chunk.ord - 1);
+  const next = neighbour(chunk.ord + 1);
+  const { topics, rejected } = validateExtraction(out, chunk.text, { before: prev?.text, after: next?.text });
 
   // Decide merges first (they may need the model), then write everything in one transaction.
   const resolved: (string | undefined)[] = [];
@@ -404,12 +474,13 @@ export async function processChunk(db: Db, ctx: PipelineContext, chunkId: string
           fieldCount++;
           conflicts += detectConflict(db, topicId, fieldId, f.type, f.text, chunk.documentId);
         }
-        if (!db.get("SELECT 1 FROM citation WHERE owner_type = 'topic_field' AND owner_id = ? AND chunk_id = ?", fieldId, chunkId)) {
+        const citedChunk = f.where === "before" ? prev!.id : f.where === "after" ? next!.id : chunkId;
+        if (!db.get("SELECT 1 FROM citation WHERE owner_type = 'topic_field' AND owner_id = ? AND chunk_id = ?", fieldId, citedChunk)) {
           db.run(
             "INSERT INTO citation (id, owner_type, owner_id, chunk_id, quote, char_start, char_end, verified, updated_at) VALUES (?, 'topic_field', ?, ?, ?, ?, ?, 1, ?)",
             newId(),
             fieldId,
-            chunkId,
+            citedChunk,
             f.quote,
             f.start,
             f.end,
@@ -842,6 +913,29 @@ export function enqueueDocument(db: Db, documentId: string): string {
 }
 
 /** (Re)generate materials for chosen topics, e.g. after a conflict is resolved. */
+/**
+ * Reads again the fragments behind open "rejected at analysis" suggestions,
+ * with the current prompt and checks (e.g. after an update that finds more).
+ * Their suggestions are closed; what still fails comes back as a new one.
+ */
+export function recheckRejected(db: Db, subjectId?: string): { chunks: number; documents: number } {
+  const rows = db.all<{ chunk_id: string; document_id: string }>(
+    `SELECT DISTINCT g.chunk_id, c.document_id FROM suggestion g JOIN source_chunk c ON c.id = g.chunk_id
+     WHERE g.kind = 'rejected_field' AND g.status = 'open' ${subjectId ? "AND g.subject_id = ?" : ""}`,
+    ...(subjectId ? [subjectId] : []),
+  );
+  const docs = new Set(rows.map((r) => r.document_id));
+  db.tx(() => {
+    const now = nowIso();
+    for (const r of rows) {
+      db.run("UPDATE suggestion SET status = 'dismissed', updated_at = ? WHERE chunk_id = ? AND kind = 'rejected_field' AND status = 'open'", now, r.chunk_id);
+      db.run("UPDATE source_chunk SET processed_at = NULL WHERE id = ?", r.chunk_id);
+    }
+    for (const d of docs) enqueueDocument(db, d);
+  });
+  return { chunks: rows.length, documents: docs.size };
+}
+
 export function enqueueGeneration(db: Db, subjectId: string, topicIds: string[]): string {
   const id = newId();
   const now = nowIso();

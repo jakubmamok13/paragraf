@@ -128,10 +128,20 @@ interface Tok {
 const foldChars = (s: string) =>
   s.normalize("NFKD").replace(/[̀-ͯ]/g, "").replace(/ł/g, "l").replace(/Ł/g, "L").toLowerCase();
 
-/** Words and numbers with their place in the original text (punctuation, §, quotes are ignored). */
+/**
+ * Words and numbers with their place in the original text (punctuation, §, quotes are ignored).
+ * A word broken at the end of a line ("przestęp-⏎stwa", a soft hyphen) is one word again.
+ */
 function tokens(text: string): Tok[] {
   const out: Tok[] = [];
   for (const m of text.matchAll(/[\p{L}\p{N}]+/gu)) {
+    const prev = out[out.length - 1];
+    const gap = prev ? text.slice(prev.end, m.index!) : "";
+    if (prev && /^\p{Ll}/u.test(m[0]) && (/^\u00AD$/.test(gap) || /^-[ \t]*\r?\n\s*$/.test(gap) || (/^- $/.test(gap) && m[0].length >= 3 && /\p{L}$/u.test(prev.norm)))) {
+      const norm = prev.norm + foldChars(m[0]);
+      out[out.length - 1] = { norm, stem: norm.slice(0, 5), start: prev.start, end: m.index! + m[0].length };
+      continue;
+    }
     const norm = foldChars(m[0]);
     out.push({ norm, stem: /^\d/.test(norm) ? norm : norm.slice(0, 5), start: m.index!, end: m.index! + m[0].length });
   }
@@ -230,6 +240,16 @@ const CONTENT_STOP = new Set(
  * holds at least 70% of them. An invented claim finds no such passage.
  */
 export function supportingPassage(claim: string, text: string): { start: number; end: number; text: string } | null {
+  const best = closestPassage(claim, text);
+  return best && best.score >= 0.7 ? { start: best.start, end: best.end, text: best.text } : null;
+}
+
+/**
+ * The sentence (or two neighbouring sentences) of the fragment that holds most
+ * of the claim's content words, with the share it holds – also when it is too
+ * little to back the claim (to show why something was rejected).
+ */
+export function closestPassage(claim: string, text: string): { score: number; start: number; end: number; text: string } | null {
   const want = [...new Set(tokens(claim).filter((t) => t.norm.length >= 3 && !CONTENT_STOP.has(t.norm)).map((t) => t.stem))];
   if (want.length < 3) return null;
   const bounds: { start: number; end: number }[] = [];
@@ -246,13 +266,13 @@ export function supportingPassage(claim: string, text: string): { start: number;
       if (!best || score > best.score) best = { score, start, end };
     }
   }
-  if (!best || best.score < 0.7) return null;
+  if (!best) return null;
   const raw = text.slice(best.start, best.end);
   const lead = raw.length - raw.trimStart().length;
   const trail = raw.length - raw.trimEnd().length;
   const start = best.start + lead;
   const end = best.end - trail;
-  return { start, end, text: text.slice(start, end) };
+  return { score: Math.max(0, best.score), start, end, text: text.slice(start, end) };
 }
 
 // ---------- search ----------

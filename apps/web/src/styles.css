@@ -228,6 +228,8 @@ h1 { font-size: 1.5rem; margin: 8px 0; }
 .version p { margin: 0; }
 .version-text { font-weight: 600; }
 .suggestion p { margin: 0; }
+.suggestion .reasons { margin: 6px 0 0; padding-left: 18px; }
+.suggestion .reasons li { margin: 2px 0; }
 .prompt { display: flex; flex-direction: column; gap: 6px; padding: 6px 0; border-bottom: 1px solid var(--border); }
 .prompt-text { width: 100%; font: 0.85rem/1.4 ui-monospace, Menlo, Consolas, monospace; border: 1px solid var(--border); border-radius: 8px; padding: 10px; background: var(--bg); color: var(--text); }
 

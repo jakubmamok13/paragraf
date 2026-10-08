@@ -12,6 +12,7 @@ import {
   enqueueDocument,
   exportPackage,
   getSettings,
+  getSubject,
   importDocument,
   listDocuments,
   listJobs,
@@ -30,9 +31,16 @@ import { importFromPicker } from "./Settings";
 import { Review } from "./Review";
 import { Conflicts } from "./Conflicts";
 import { Suggestions } from "./Suggestions";
+import { AddCard } from "./AddCard";
 import { ExternalSources } from "./ExternalSources";
 
-type Sub = "review" | "conflicts" | "suggestions" | { kind: "external"; query: string; subjectId?: string } | null;
+type Sub =
+  | "review"
+  | "conflicts"
+  | "suggestions"
+  | { kind: "external"; query: string; subjectId?: string }
+  | { kind: "card"; subjectId: string; topic: string; text: string }
+  | null;
 
 /** The laptop part: sources in, local AI, decisions, package for the phone. */
 export function Workshop() {
@@ -43,7 +51,30 @@ export function Workshop() {
 
   if (sub === "review") return <Review onBack={() => setSub(null)} />;
   if (sub === "conflicts") return <Conflicts onBack={() => setSub(null)} />;
-  if (sub === "suggestions") return <Suggestions onBack={() => setSub(null)} onResearch={(query, subjectId) => setSub({ kind: "external", query, subjectId })} />;
+  if (sub === "suggestions") {
+    return (
+      <Suggestions
+        onBack={() => setSub(null)}
+        onResearch={(query, subjectId) => setSub({ kind: "external", query, subjectId })}
+        onOwnCard={(subjectId, topic, text) => setSub({ kind: "card", subjectId, topic, text })}
+      />
+    );
+  }
+  if (sub && typeof sub === "object" && sub.kind === "card") {
+    return (
+      <AddCard
+        subjectId={sub.subjectId}
+        subjectName={getSubject(db, sub.subjectId)?.name ?? ""}
+        onDone={() => setSub("suggestions")}
+        initial={{
+          topic: sub.topic,
+          q: `Czym jest ${sub.topic.charAt(0).toLowerCase()}${sub.topic.slice(1)}?`,
+          a: sub.text,
+          note: "Tę treść napisało AI, ale żadne Twoje źródło jej nie potwierdza. Sprawdź ją w podręczniku lub notatkach i popraw przed zapisaniem: zapisana będzie Twoją własną fiszką.",
+        }}
+      />
+    );
+  }
   if (sub && typeof sub === "object") return <ExternalSources onBack={() => setSub(null)} initialQuery={sub.query} {...(sub.subjectId ? { initialSubjectId: sub.subjectId } : {})} />;
 
   const toReview = counts.pending + counts.needsReview + counts.flagged;

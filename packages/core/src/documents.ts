@@ -253,6 +253,8 @@ export function deleteDocument(db: Db, id: string): void {
 
 export interface ChunkView {
   id: string;
+  /** Position in the document (neighbouring fragments are ord ± 1). */
+  ord: number;
   text: string;
   headingPath: string[];
   pageFrom: number | null;
@@ -276,6 +278,7 @@ export function getChunk(db: Db, id: string): ChunkView | undefined {
     pageFrom: r.page_from,
     pageTo: r.page_to,
     documentId: r.document_id,
+    ord: Number(r.ord),
     documentTitle: r.title,
     documentKind: r.kind,
     lectureDate: r.lecture_date,
