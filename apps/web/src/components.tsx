@@ -165,15 +165,32 @@ export function TopicSheet({ topicId, current, onClose }: { topicId: string; cur
                 <strong>
                   {p.icon} {p.label}
                 </strong>
-                <span className="small muted">{p.items ? `${Math.round(p.mastery * 100)}% · ${p.learned}/${p.items}` : "bez fiszki"}</span>
+                <span className="small muted">
+                  {p.items
+                    ? `${Math.round(p.mastery * 100)}% · ${p.learned}/${p.items}`
+                    : p.materials
+                      ? `fiszki: ${p.materials} · jeszcze nie ćwiczone`
+                      : "bez fiszki"}
+                </span>
               </div>
               <ul>
                 {p.points.map((x) => (
-                  <li key={x.fieldId}>{x.text}</li>
+                  <li key={x.fieldId}>
+                    {x.text}
+                    {x.source && (
+                      <details className="point-source">
+                        <summary className="small muted">{x.source}</summary>
+                        {x.quote && <blockquote className="small">„{x.quote}”</blockquote>}
+                      </details>
+                    )}
+                  </li>
                 ))}
               </ul>
             </section>
           ))}
+          {schema.parts.length === 0 && (
+            <p className="muted small">Źródła tylko wspominają to zagadnienie. Treść pojawi się, gdy Pracownia przeczyta fragment, który je omawia.</p>
+          )}
         </div>
       </div>
     </div>

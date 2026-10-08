@@ -163,7 +163,10 @@ export function deleteSubject(db: Db, id: string): void {
 export interface SubjectStats {
   documents: number;
   topics: number;
+  /** Active cards. */
   materials: number;
+  /** Cards waiting for approval in the Workshop. */
+  pending: number;
 }
 
 export function subjectStats(db: Db, id: string): SubjectStats {
@@ -172,6 +175,10 @@ export function subjectStats(db: Db, id: string): SubjectStats {
     topics: db.get<{ n: number }>("SELECT COUNT(*) AS n FROM topic WHERE subject_id = ?", id)!.n,
     materials: db.get<{ n: number }>(
       "SELECT COUNT(*) AS n FROM material m JOIN topic t ON t.id = m.topic_id WHERE t.subject_id = ? AND m.status = 'active'",
+      id,
+    )!.n,
+    pending: db.get<{ n: number }>(
+      "SELECT COUNT(*) AS n FROM material m JOIN topic t ON t.id = m.topic_id WHERE t.subject_id = ? AND m.status IN ('pending', 'needs_review')",
       id,
     )!.n,
   };

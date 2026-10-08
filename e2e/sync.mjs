@@ -154,7 +154,7 @@ await L.getByRole("button", { name: "Przedmioty" }).click();
 await L.getByRole("button", { name: "+ Dodaj" }).click();
 await L.getByPlaceholder("np. Prawo cywilne – część ogólna").fill("Prawo cywilne");
 await L.getByRole("button", { name: "Zapisz" }).click();
-await L.getByRole("button", { name: /Prawo cywilne/ }).click();
+await L.getByRole("button", { name: "Edytuj" }).click();
 await L.getByRole("button", { name: "+ Dodaj własną fiszkę" }).click();
 await L.getByLabel("Zagadnienie").fill("Zasiedzenie");
 await L.getByLabel("Pytanie").fill("Ile lat trwa zasiedzenie nieruchomości w dobrej wierze?");

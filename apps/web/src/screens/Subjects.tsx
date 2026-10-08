@@ -17,17 +17,20 @@ import {
 } from "@paragraf/core";
 import { Card, Field, formatDate, plDays, useAction, useDb } from "../ui";
 import { AddCard } from "./AddCard";
+import { SubjectTopics } from "./Topics";
 
 const STATUS_LABEL = { active: "nauka", maintenance: "podtrzymanie", archived: "archiwum" } as const;
 
 export function Subjects() {
   const { db } = useDb();
   const [editing, setEditing] = useState<Subject | "new" | null>(null);
+  const [browsing, setBrowsing] = useState<Subject | null>(null);
   const [showArchived, setShowArchived] = useState(false);
   const subjects = listSubjects(db, { includeArchived: showArchived });
   const today = localToday();
 
   if (editing) return <SubjectForm subject={editing === "new" ? null : editing} onDone={() => setEditing(null)} />;
+  if (browsing) return <SubjectTopics subjectId={browsing.id} subjectName={browsing.name} onBack={() => setBrowsing(null)} />;
 
   return (
     <div className="screen">
@@ -47,7 +50,7 @@ export function Subjects() {
       {subjects.map((s) => {
         const stats = subjectStats(db, s.id);
         return (
-          <button key={s.id} className="card card-button" onClick={() => setEditing(s)}>
+          <section key={s.id} className="card">
             <div className="list-row">
               <strong>{s.name}</strong>
               {s.status !== "active" && <span className="pill pill-muted">{STATUS_LABEL[s.status]}</span>}
@@ -60,9 +63,18 @@ export function Subjects() {
                   : "Bez egzaminu"}
             </p>
             <p className="muted small">
-              Źródła: {stats.documents} · zagadnienia: {stats.topics} · materiały: {stats.materials}
+              Źródła: {stats.documents} · zagadnienia: {stats.topics} · fiszki: {stats.materials}
+              {stats.pending ? ` · do zatwierdzenia w Pracowni: ${stats.pending}` : ""}
             </p>
-          </button>
+            <div className="subject-actions">
+              <button className="btn btn-secondary btn-small" disabled={!stats.topics} onClick={() => setBrowsing(s)}>
+                Zagadnienia ({stats.topics})
+              </button>
+              <button className="btn btn-ghost btn-small" onClick={() => setEditing(s)}>
+                Edytuj
+              </button>
+            </div>
+          </section>
         );
       })}
 

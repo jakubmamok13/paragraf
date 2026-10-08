@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { CONFIDENCE_LABEL, daysBetween, hardestCards, localToday, planSession, type SessionPlan, studyStats, subjectProgress, todayFocus } from "@paragraf/core";
 import { Card, plDays, useDb } from "../ui";
+import { TopicSheet } from "../components";
 
 const pct = (x: number) => `${Math.round(x * 100)}%`;
 
@@ -16,6 +17,7 @@ function Meter({ value, label }: { value: number; label: string }) {
 export function Progress({ onStart }: { onStart: (plan: SessionPlan, mode: string) => void }) {
   const { db } = useDb();
   const [open, setOpen] = useState<string | null>(null);
+  const [sheet, setSheet] = useState<string | null>(null);
   const progress = subjectProgress(db);
   const stats = studyStats(db);
   const focus = todayFocus(progress);
@@ -107,10 +109,10 @@ export function Progress({ onStart }: { onStart: (plan: SessionPlan, mode: strin
                   {sec.topics.map((t) => (
                     <li key={t.id}>
                       <div className="list-row">
-                        <span className="small">
+                        <button className="link small topic-link" onClick={() => setSheet(t.id)}>
                           {t.name}
                           {t.examWeight >= 0.9 && <span className="pill">egzamin</span>}
-                        </span>
+                        </button>
                         <span className="muted small">{t.empty ? "brak materiałów" : `${pct(t.mastery)} · ${t.learned}/${t.items}`}</span>
                       </div>
                       {!t.empty && <Meter value={t.mastery} label={t.name} />}
@@ -148,6 +150,7 @@ export function Progress({ onStart }: { onStart: (plan: SessionPlan, mode: strin
           </ul>
         </Card>
       )}
+      {sheet && <TopicSheet topicId={sheet} onClose={() => setSheet(null)} />}
     </div>
   );
 }

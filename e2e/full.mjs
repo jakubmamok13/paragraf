@@ -107,6 +107,19 @@ await L.getByText("Wszystko przejrzane.").waitFor();
 await L.getByRole("button", { name: "← Wróć" }).click();
 step("approved all");
 
+// Browsing the subject's topics and one topic's schema with its sources.
+await L.getByRole("button", { name: "Przedmioty" }).click();
+await L.getByRole("button", { name: /^Zagadnienia \(\d+\)$/ }).click();
+await L.locator(".topic-row", { hasText: "Zasiedzenie nieruchomości" }).click();
+await L.locator(".modal .point-source summary").first().click();
+await L.locator(".modal blockquote").first().waitFor();
+await L.screenshot({ path: out + "/L5b-topic-sheet.png" });
+step("topics browsed: " + (await L.locator(".topic-row").count()) + " topics; sheet parts: " + (await L.locator(".modal .sheet-part strong").allInnerTexts()).join(", "));
+await L.getByLabel("Zamknij").click();
+await L.screenshot({ path: out + "/L5a-topics.png", fullPage: true });
+await L.getByRole("button", { name: "← Wróć" }).click();
+await L.getByRole("button", { name: "Pracownia" }).click();
+
 await L.locator(".todo", { hasText: "sugestie" }).click();
 await L.screenshot({ path: out + "/L6-suggestions.png", fullPage: true });
 await L.getByRole("button", { name: "← Wróć" }).click();

@@ -107,3 +107,24 @@ describe("short lesson", () => {
     );
   });
 });
+
+describe("browsing a subject's topics", () => {
+  it("lists topics by section with their parts, cards and cards waiting for approval", async () => {
+    const { default: initSqlJs } = await import("sql.js");
+    const { Db, createSubject, addManualMaterial, subjectTopics, subjectStats } = await import("../src");
+    const SQL = await initSqlJs();
+    const db = new Db(new SQL.Database());
+    const s = createSubject(db, { name: "Postępowanie karne", exams: [] });
+    addManualMaterial(db, { subjectId: s.id, topicName: "Proces karny", type: "qa", payload: { q: "Jakie są etapy procesu karnego?", a: "Przygotowawczy, jurysdykcyjny, wykonawczy" } });
+    const now = "2026-10-08T10:00:00.000Z";
+    db.run("INSERT INTO topic (id, subject_id, name, status, created_at, updated_at) VALUES ('t2', ?, 'Zasada legalizmu', 'draft', ?, ?)", s.id, now, now);
+    db.run("INSERT INTO topic_field (id, topic_id, field_type, ord, content_json, status, updated_at) VALUES ('f1', 't2', 'definition', 0, ?, 'active', ?)", JSON.stringify({ text: "Obowiązek ścigania przestępstw." }), now);
+    db.run("INSERT INTO material (id, topic_id, type, payload_json, status, created_at, updated_at) VALUES ('m2', 't2', 'qa', '{}', 'pending', ?, ?)", now, now);
+    const topics = subjectTopics(db, s.id).flatMap((x) => x.topics);
+    expect(topics.map((t) => t.name)).toEqual(["Proces karny", "Zasada legalizmu"]);
+    expect(topics[0]).toMatchObject({ materials: 1, pending: 0, fields: 0 });
+    expect(topics[1]).toMatchObject({ materials: 0, pending: 1, fields: 1 });
+    expect(topics[1]!.slots.map((x) => x.slot)).toEqual(["definition"]);
+    expect(subjectStats(db, s.id)).toMatchObject({ topics: 2, materials: 1, pending: 1 });
+  });
+});

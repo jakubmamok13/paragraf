@@ -309,3 +309,15 @@ h1 { font-size: 1.5rem; margin: 8px 0; }
 /* Six tabs fit on a phone: smaller labels. */
 .tabbar button { font-size: 0.72rem; }
 @media (max-width: 400px) { .tabbar button { font-size: 0.64rem; } .tab-icon { font-size: 1.15rem; } }
+
+/* topics of a subject */
+.topic-list { margin: 0; }
+.topic-list li { border-top: 1px solid var(--border); }
+.topic-list li:first-child { border-top: 0; }
+.topic-row { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; width: 100%; padding: 10px 0; background: none; border: 0; text-align: left; font: inherit; color: inherit; cursor: pointer; }
+.topic-row-name { font-weight: 600; }
+.topic-row-name .pill { margin-left: 6px; font-weight: 400; }
+.point-source summary { cursor: pointer; margin-top: 2px; font-weight: 400; }
+.point-source blockquote { margin: 4px 0 6px; padding-left: 10px; border-left: 3px solid var(--accent-soft); }
+.subject-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+.topic-link { text-align: left; padding: 0; color: inherit; }

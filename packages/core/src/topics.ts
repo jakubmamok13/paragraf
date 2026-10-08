@@ -106,6 +106,76 @@ export function topicSchema(db: Db, topicId: string, now = new Date()): TopicSch
   return { topicId, name: t.name, subjectName: t.subject_name, parts, uncovered };
 }
 
+// ---------- browsing a subject's topics ----------
+
+export interface TopicListItem {
+  id: string;
+  name: string;
+  /** "draft" = only mentioned in a source so far (no content yet). */
+  status: string;
+  /** Verified pieces of content (definition, premises…). */
+  fields: number;
+  /** The parts present, in schema order (icons). */
+  slots: SlotInfo[];
+  materials: number;
+  pending: number;
+  examWeight: number;
+  onExamList: boolean;
+}
+
+export interface TopicListSection {
+  id: string | null;
+  title: string;
+  topics: TopicListItem[];
+}
+
+/** All topics of a subject by section, with what the sources say and how many cards each has. */
+export function subjectTopics(db: Db, subjectId: string): TopicListSection[] {
+  const sections = new Map<string | null, TopicListSection>();
+  for (const s of db.all<{ id: string; title: string }>("SELECT id, title FROM section WHERE subject_id = ? ORDER BY ord", subjectId)) {
+    sections.set(s.id, { id: s.id, title: s.title, topics: [] });
+  }
+  const topics = db.all<{
+    id: string;
+    name: string;
+    status: string;
+    section_id: string | null;
+    exam_weight: number;
+    exam_weight_override: number | null;
+    on_exam_list: number;
+    types: string | null;
+    fields: number;
+    materials: number;
+    pending: number;
+  }>(
+    `SELECT t.id, t.name, t.status, t.section_id, t.exam_weight, t.exam_weight_override, t.on_exam_list,
+       (SELECT GROUP_CONCAT(DISTINCT f.field_type) FROM topic_field f WHERE f.topic_id = t.id AND f.status = 'active') AS types,
+       (SELECT COUNT(*) FROM topic_field f WHERE f.topic_id = t.id AND f.status = 'active') AS fields,
+       (SELECT COUNT(*) FROM material m WHERE m.topic_id = t.id AND m.status = 'active') AS materials,
+       (SELECT COUNT(*) FROM material m WHERE m.topic_id = t.id AND m.status IN ('pending', 'needs_review')) AS pending
+     FROM topic t WHERE t.subject_id = ? ORDER BY t.name COLLATE NOCASE`,
+    subjectId,
+  );
+  for (const t of topics) {
+    const types = new Set((t.types ?? "").split(",").filter(Boolean));
+    const item: TopicListItem = {
+      id: t.id,
+      name: t.name,
+      status: t.status,
+      fields: t.fields,
+      slots: SLOTS.filter((s) => types.has(s.slot)),
+      materials: t.materials,
+      pending: t.pending,
+      examWeight: t.exam_weight_override ?? t.exam_weight,
+      onExamList: t.on_exam_list === 2,
+    };
+    const key = t.section_id && sections.has(t.section_id) ? t.section_id : null;
+    if (!sections.has(key)) sections.set(key, { id: null, title: "Bez działu", topics: [] });
+    sections.get(key)!.topics.push(item);
+  }
+  return [...sections.values()].filter((s) => s.topics.length);
+}
+
 // ---------- synthesis card ----------
 
 const short = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1).trimEnd()}…` : s);
