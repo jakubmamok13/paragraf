@@ -58,10 +58,15 @@ async function mockInternet(context, log) {
         headers: cors,
         contentType: "application/json",
         body: JSON.stringify({
-          items: [{ ELI: "DU/2025/1071", title: "Obwieszczenie Marszałka Sejmu w sprawie ogłoszenia jednolitego tekstu ustawy - Kodeks cywilny", type: "Obwieszczenie", announcementDate: "2025-08-01", textHTML: true, displayAddress: "Dz.U. 2025 poz. 1071" }],
+          items: [
+            { ELI: "DU/2025/1071", title: "Obwieszczenie Marszałka Sejmu w sprawie ogłoszenia jednolitego tekstu ustawy - Kodeks cywilny", type: "Obwieszczenie", announcementDate: "2025-08-01", textHTML: true, displayAddress: "Dz.U. 2025 poz. 1071" },
+            // The newest consolidated text, published only as PDF (as Dz.U. 2026 poz. 490 of k.p.k.).
+            { ELI: "DU/2026/490", title: "Obwieszczenie Marszałka Sejmu w sprawie ogłoszenia jednolitego tekstu ustawy - Kodeks testowy", type: "Obwieszczenie", announcementDate: "2026-03-27", textHTML: false, textPDF: true, displayAddress: "Dz.U. 2026 poz. 490" },
+          ],
         }),
       });
     }
+    if (url.endsWith("/text.pdf")) return route.fulfill({ headers: cors, contentType: "application/pdf", body: readFileSync(FX + "/isap-kpk-tylko-pdf.pdf") });
     return route.fulfill({ headers: cors, contentType: "text/html", body: readFileSync(FX + "/isap-kodeks-cywilny.html", "utf8") });
   });
   await context.route("https://api.openalex.org/**", (route) => {
@@ -120,8 +125,17 @@ await L.getByRole("button", { name: "Włącz" }).click();
 await L.getByText(/k\.c\.: art\. 117, 118, 172, 174/).waitFor();
 await L.getByRole("button", { name: /Szukaj tekstu jednolitego/ }).click();
 await L.getByText("Dz.U. 2025 poz. 1071", { exact: false }).waitFor();
+// The PDF-only text can be chosen (newest, so chosen by default); here the HTML one first.
+if (!(await L.locator("label", { hasText: "Dz.U. 2026 poz. 490" }).locator("input").isChecked())) throw new Error("newest (PDF only) not chosen by default");
+await L.locator("label", { hasText: "Dz.U. 2025 poz. 1071" }).locator("input").check();
 await L.getByRole("button", { name: "Pobierz wybrane artykuły" }).click();
 await L.getByText(/Pobrano art\. 117, 118, 172; nie znaleziono: 174/).waitFor();
+await L.getByRole("button", { name: /Szukaj tekstu jednolitego/ }).click();
+await L.locator("label", { hasText: "Dz.U. 2026 poz. 490" }).locator("input").check();
+await L.getByLabel("Artykuły").fill("2, 4");
+await L.getByRole("button", { name: "Pobierz wybrane artykuły" }).click();
+await L.getByText(/Pobrano art\. 2, 4\./).waitFor();
+step("ISAP: articles from an HTML text and from a PDF-only text");
 await L.getByPlaceholder("np. przedawnienie roszczeń nowelizacja 2018").fill("przedawnienie roszczeń nowelizacja 2018");
 await L.getByRole("button", { name: "Szukaj w OpenAlex" }).click();
 await L.getByText("Przedawnienie roszczeń po nowelizacji z 2018 r.").waitFor();

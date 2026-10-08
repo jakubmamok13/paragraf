@@ -11,6 +11,8 @@ import type { Db } from "./db";
 import { type DocumentImportResult, importDocument } from "./documents";
 import type { Block, ParsedFile } from "./import/blocks";
 import { decodeEntities, parseHtml } from "./import/html";
+import type { ParseDeps } from "./import/index";
+import { parsePdf } from "./import/pdf";
 import { extractProvisions, normalizeAct } from "./legal";
 import { getSettings } from "./settings";
 
@@ -69,6 +71,8 @@ export interface ActHit {
   date: string | null;
   inForce: boolean | null;
   hasHtml: boolean;
+  /** The newest consolidated texts often come only as PDF. */
+  hasPdf: boolean;
   /** "Dz.U. 2025 poz. 1071". */
   display: string;
 }
@@ -122,6 +126,7 @@ export async function searchActs(db: Db, title: string, fetchFn: FetchFn = fetch
         date: a.announcementDate ?? a.promulgation ?? null,
         inForce: a.inForce === undefined ? null : a.inForce === "IN_FORCE" || a.inForce === true,
         hasHtml: !!(a.textHTML ?? a.textHtml),
+        hasPdf: !!(a.textPDF ?? a.textPdf),
         display: a.displayAddress ?? (pub && year && pos ? `${pub === "MP" ? "M.P." : "Dz.U."} ${year} poz. ${pos}` : eli),
       } satisfies ActHit;
     })
@@ -129,12 +134,44 @@ export async function searchActs(db: Db, title: string, fetchFn: FetchFn = fetch
     .sort((a, b) => Number(/jednolit/i.test(b.title)) - Number(/jednolit/i.test(a.title)) || String(b.date ?? "").localeCompare(String(a.date ?? "")));
 }
 
+// "Art. 118." / "Art. 4.1)" (a footnote mark) – an article starts here. References inside the
+// text are written "art. 118" in lower case, so only "Art." with a capital counts.
+const ARTICLE_START = /^Art\.\s?(\d+[a-z]*)\.?(?:\d{1,2}\))?(?:\s|$)/;
+// In a PDF the reader joins lines into paragraphs, so an article or a § may start mid-paragraph,
+// right after the previous sentence.
+const ARTICLE_IN_TEXT = /(?<=[.;:)]\s)(?=Art\.\s?\d+[a-z]*\.(?:\d{1,2}\))?\s)/g;
+const PARAGRAPH_IN_TEXT = /(?<=[.;:]\s)(?=§\s?\d+[a-z]*\.\s)/g;
+// Page headers and footers of Dziennik Ustaw and ISAP printouts that may survive in the text.
+const PRINT_NOISE = /\s*(?:Dziennik Ustaw\s*[–-]\s*\d+\s*[–-]\s*Poz\.\s*\d+|©\s*Kancelaria Sejmu\s*s\.\s*\d+\/\d+|\d{4}-\d{2}-\d{2}\s*$)\s*/g;
+
+// Footnotes of a consolidated text ("1) Ze zmianą wprowadzoną przez…"): about the act's history, not its wording.
+// Numbered points inside an article ("1) sąd…") do not start with these words.
+const FOOTNOTE = /^\d{1,3}\)\s*(?:Ze zmian|Zmiany|W brzmieniu|Dodan|Uchylon|Utracił|Niniejsza ustawa|Z dniem|Obecnie|Przepis|Zgodnie z art\. \d+ ustawy z dnia)/;
+
+/** One block per article start and per §, without print headers and footnotes. */
+function explodeArticles(blocks: Block[]): Block[] {
+  const out: Block[] = [];
+  for (const b of blocks) {
+    if (b.kind !== "para") {
+      out.push(b);
+      continue;
+    }
+    const text = b.text.replace(PRINT_NOISE, " ").trim();
+    if (FOOTNOTE.test(text)) continue;
+    for (const art of text.split(ARTICLE_IN_TEXT)) {
+      for (const piece of art.split(PARAGRAPH_IN_TEXT)) if (piece.trim()) out.push({ ...b, text: piece.trim() });
+    }
+  }
+  return out;
+}
+
 /** Splits a statute's text into articles: "Art. 118." … up to the next article. */
-export function splitArticles(blocks: Block[]): Map<string, Block[]> {
+export function splitArticles(input: Block[]): Map<string, Block[]> {
+  const blocks = explodeArticles(input);
   const out = new Map<string, Block[]>();
   let current: Block[] | null = null;
   for (const b of blocks) {
-    const m = b.text.match(/^Art\.\s*(\d+[a-z]*)\.?(?:\s|$)/i);
+    const m = b.text.match(ARTICLE_START);
     if (m) {
       current = [];
       // The same number may appear twice (e.g. in an attached act): keep the first.
@@ -163,16 +200,33 @@ export async function importActArticles(
   db: Db,
   input: { subjectId: string; act: ActHit; articles: string[]; abbrev?: string },
   fetchFn: FetchFn = fetch,
+  /** pdf.js, for acts published only as PDF. */
+  deps: ParseDeps = {},
 ): Promise<ActImport> {
   const ext = assertEnabled(db);
-  if (!input.act.hasHtml) throw new ExternalError("Ten akt nie ma wersji HTML w ISAP. Pobierz PDF ze strony ISAP i wczytaj go w Pracowni.", "not_found", isapPageUrl(input.act.eli));
-  const res = await getRaw(`${ext.isapUrl}/eli/acts/${input.act.eli}/text.html`, fetchFn, isapPageUrl(input.act.eli));
-  const html = await res.text();
-  const all = splitArticles(parseHtml(html));
+  const page = isapPageUrl(input.act.eli);
+  let all: Map<string, Block[]>;
+  if (input.act.hasHtml) {
+    const res = await getRaw(`${ext.isapUrl}/eli/acts/${input.act.eli}/text.html`, fetchFn, page);
+    all = splitArticles(parseHtml(await res.text()));
+  } else if (input.act.hasPdf) {
+    if (!deps.pdfjs) throw new ExternalError("Brak czytnika PDF w tej wersji aplikacji.", "bad_response", page);
+    const res = await getRaw(`${ext.isapUrl}/eli/acts/${input.act.eli}/text.pdf`, fetchFn, page);
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    let parsed: Awaited<ReturnType<typeof parsePdf>>;
+    try {
+      parsed = await parsePdf(bytes, deps.pdfjs);
+    } catch (e) {
+      throw new ExternalError(`Nie udało się odczytać PDF z ISAP: ${e instanceof Error ? e.message : String(e)}`, "bad_response", page);
+    }
+    all = splitArticles(parsed.blocks);
+  } else {
+    throw new ExternalError("Ten akt nie ma w ISAP ani tekstu HTML, ani PDF. Otwórz stronę ISAP i pobierz go ręcznie.", "not_found", page);
+  }
   const wanted = [...new Set(input.articles.map((a) => a.trim().toLowerCase()).filter(Boolean))].sort((a, b) => parseInt(a) - parseInt(b) || a.localeCompare(b));
   const found = wanted.filter((a) => all.has(a));
   const missing = wanted.filter((a) => !all.has(a));
-  if (!found.length) throw new ExternalError(`W tekście aktu nie znaleziono artykułów: ${wanted.join(", ")}.`, "not_found", isapPageUrl(input.act.eli));
+  if (!found.length) throw new ExternalError(`W tekście aktu nie znaleziono artykułów: ${wanted.join(", ")}.`, "not_found", page);
   const abbrev = input.abbrev ?? abbrevForTitle(input.act.title) ?? input.act.display;
   const blocks: Block[] = [];
   for (const a of found) {
@@ -190,7 +244,7 @@ export async function importActArticles(
     parsed,
     act: { abbrev, title: input.act.title, stateAsOf: input.act.date },
     url: isapPageUrl(input.act.eli),
-    meta: { source: "ISAP", eli: input.act.eli, display: input.act.display, articles: found },
+    meta: { source: "ISAP", eli: input.act.eli, display: input.act.display, articles: found, format: input.act.hasHtml ? "html" : "pdf" },
   });
   return { result, found, missing };
 }

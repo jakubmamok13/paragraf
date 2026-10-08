@@ -21,6 +21,7 @@ import {
 } from "@paragraf/core";
 import { Card, Field, useAction, useDb, useToast } from "../ui";
 import { startProcessing } from "../processing";
+import { parseDeps } from "../runtime";
 
 /**
  * Filling gaps from the internet, in order of authority: ISAP (statutes),
@@ -108,7 +109,7 @@ function IsapCard({ subjectId, onImported }: { subjectId: string; onImported: (d
     try {
       const h = await searchActs(db, title);
       setHits(h);
-      setChosen(h.find((x) => x.hasHtml)?.eli ?? "");
+      setChosen(h.find((x) => x.hasHtml || x.hasPdf)?.eli ?? "");
     } catch (e) {
       setError(e);
     }
@@ -120,7 +121,9 @@ function IsapCard({ subjectId, onImported }: { subjectId: string; onImported: (d
     setBusy(true);
     setError(null);
     try {
-      const r = await importActArticles(db, { subjectId, act: hit, articles: articles.split(/[\s,;]+/) });
+      // Newest consolidated texts often come only as PDF: the PDF reader loads then.
+      const deps = hit.hasHtml ? {} : await parseDeps("akt.pdf");
+      const r = await importActArticles(db, { subjectId, act: hit, articles: articles.split(/[\s,;]+/) }, fetch, deps);
       toast(`Pobrano art. ${r.found.join(", ")}${r.missing.length ? `; nie znaleziono: ${r.missing.join(", ")}` : ""}.`);
       onImported(r.result.documentId);
       setHits(null);
@@ -164,9 +167,9 @@ function IsapCard({ subjectId, onImported }: { subjectId: string; onImported: (d
           {hits.length === 0 && <p className="muted small">Nic nie znaleziono.</p>}
           {hits.slice(0, 6).map((h) => (
             <label key={h.eli} className="check option">
-              <input type="radio" name="act" checked={chosen === h.eli} disabled={!h.hasHtml} onChange={() => setChosen(h.eli)} />
+              <input type="radio" name="act" checked={chosen === h.eli} disabled={!h.hasHtml && !h.hasPdf} onChange={() => setChosen(h.eli)} />
               <span className="small">
-                {h.title} <span className="muted">· {h.display}{h.date ? ` · ${h.date}` : ""}{h.hasHtml ? "" : " · tylko PDF"}</span>
+                {h.title} <span className="muted">· {h.display}{h.date ? ` · ${h.date}` : ""}{h.hasHtml ? "" : h.hasPdf ? " · PDF" : " · brak tekstu"}</span>
               </span>
             </label>
           ))}

@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import initSqlJs, { type SqlJsStatic } from "sql.js";
+import * as pdfjs from "pdfjs-dist/legacy/build/pdf.mjs";
 import { beforeAll, describe, expect, it } from "vitest";
 import {
   abstractFromIndex,
@@ -15,6 +16,7 @@ import {
   importScholarly,
   listDocuments,
   parseFile,
+  type PdfJs,
   provisionGaps,
   searchActs,
   searchJudgments,
@@ -130,6 +132,48 @@ describe("ISAP", () => {
     const row = db.get<any>("SELECT url, meta_json FROM source_document");
     expect(row.url).toContain("isap.sejm.gov.pl");
     expect(JSON.parse(row.meta_json).eli).toBe("DU/2025/1071");
+  });
+
+  it("imports articles from a consolidated text published only as PDF", async () => {
+    const { db, s } = setup();
+    const pdf = new Uint8Array(readFileSync(fileURLToPath(new URL("./fixtures/isap-kpk-tylko-pdf.pdf", import.meta.url))));
+    const log: string[] = [];
+    const web = (async (url: string) => {
+      log.push(url);
+      if (url.includes("/eli/acts/search")) {
+        return new Response(
+          JSON.stringify({
+            items: [
+              { ELI: "DU/2024/37", title: "Obwieszczenie Marszałka Sejmu w sprawie ogłoszenia jednolitego tekstu ustawy - Kodeks postępowania karnego", announcementDate: "2023-12-07", textHTML: true, textPDF: true, displayAddress: "Dz.U. 2024 poz. 37" },
+              { ELI: "DU/2026/490", title: "Obwieszczenie Marszałka Sejmu w sprawie ogłoszenia jednolitego tekstu ustawy - Kodeks postępowania karnego", announcementDate: "2026-03-27", textHTML: false, textPDF: true, displayAddress: "Dz.U. 2026 poz. 490" },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      if (url.endsWith("/eli/acts/DU/2026/490/text.pdf")) return new Response(pdf, { status: 200, headers: { "Content-Type": "application/pdf" } });
+      return new Response("not found", { status: 404 });
+    }) as unknown as typeof fetch;
+    const hits = await searchActs(db, "Kodeks postępowania karnego", web);
+    expect(hits[0]).toMatchObject({ eli: "DU/2026/490", hasHtml: false, hasPdf: true }); // newest first, though PDF only
+    await expect(importActArticles(db, { subjectId: s.id, act: hits[0]!, articles: ["2"] }, web)).rejects.toThrow(/czytnika PDF/);
+    const r = await importActArticles(db, { subjectId: s.id, act: hits[0]!, articles: ["2", "3", "4", "5", "9"] }, web, { pdfjs: pdfjs as unknown as PdfJs });
+    expect(r.found).toEqual(["2", "3", "4", "5"]);
+    expect(r.missing).toEqual(["9"]);
+    expect(log.at(-1)).toMatch(/text\.pdf$/);
+    const text = db.all<{ text: string }>("SELECT text FROM source_chunk ORDER BY ord").map((c) => c.text).join("\n");
+    // Article 2 ends where article 3 starts in the same line; a word broken at a line end is whole again.
+    expect(text).toContain("na niekorzyść oskarżonego.");
+    expect(text).toMatch(/Art\. 3\. Organy prowadzące postępowanie/);
+    // Article 4 runs from a footnote mark to the next page's §; no page header in the text.
+    expect(text).toContain("prawomocnym wyrokiem");
+    expect(text).toContain("rozstrzyga się na korzyść oskarżonego");
+    expect(text).not.toMatch(/Dziennik Ustaw/);
+    expect(text).not.toContain("Ze zmianą wprowadzoną"); // footnote at the page bottom
+    expect(text).toMatch(/Art\. 5\. \(uchylony\)/);
+    expect(text).not.toContain("Art. 1.");
+    expect(db.get<any>("SELECT state_as_of FROM legal_act")).toEqual({ state_as_of: "2026-03-27" });
+    expect(JSON.parse(db.get<any>("SELECT meta_json FROM source_document").meta_json).format).toBe("pdf");
   });
 
   it("lists articles your materials mention but no imported act covers", async () => {
