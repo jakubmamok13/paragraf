@@ -17,6 +17,7 @@ import {
   listDocuments,
   listJobs,
   listSubjects,
+  modelContext,
   localToday,
   packageFileName,
   parseFile,
@@ -344,6 +345,7 @@ function AiCard() {
           </select>
         </Field>
       )}
+      {check?.ok && ai.model && <ContextField />}
       <p className={`status ${check?.ok && check.modelAvailable ? "status-ok" : "status-warn"}`}>{checking ? "Sprawdzam…" : check ? aiCheckHint(check, ai, location.origin) : ""}</p>
       <button className="btn btn-secondary btn-small" onClick={() => void runCheck()} disabled={checking}>
         Sprawdź połączenie
@@ -442,5 +444,45 @@ function DocumentsCard() {
         ))}
       </ul>
     </Card>
+  );
+}
+
+/** The model's context window: what the server reports, and a setting when it reports nothing or wrong. */
+function ContextField() {
+  const { db } = useDb();
+  const act = useAction();
+  const ai = getSettings(db).ai;
+  const [reported, setReported] = useState<number | null | undefined>(undefined);
+  const [value, setValue] = useState(ai.contextLength ? String(ai.contextLength) : "");
+  useEffect(() => {
+    setReported(undefined);
+    void modelContext(ai).then(setReported);
+  }, [ai.provider, ai.baseUrl, ai.model]); // eslint-disable-line react-hooks/exhaustive-deps
+  const auto =
+    ai.provider === "ollama"
+      ? "aplikacja prosi Ollamę o 8192"
+      : reported
+        ? `serwer podaje ${reported}`
+        : reported === null
+          ? "serwer nie podaje – przyjęto 4096"
+          : "sprawdzam…";
+  return (
+    <Field
+      label="Długość kontekstu modelu (tokeny)"
+      hint={
+        <>
+          Puste = automatycznie ({auto}). Polecenia są dopasowywane do tej długości. Wpisz wartość, z jaką model jest załadowany: LM Studio – „Context
+          Length” przy ładowaniu modelu, Ollama – Settings → Context length. Zalecane co najmniej 8192.
+        </>
+      }
+    >
+      <input
+        inputMode="numeric"
+        placeholder="automatycznie"
+        value={value}
+        onChange={(e) => setValue(e.target.value.replace(/\D/g, ""))}
+        onBlur={() => void act(() => setValue(String(updateSettings(db, { ai: { contextLength: Number(value) || 0 } }).ai.contextLength || "")))}
+      />
+    </Field>
   );
 }

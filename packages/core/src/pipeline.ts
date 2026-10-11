@@ -6,7 +6,7 @@
 // topic) and every claim is checked in code: a quote must be found in the
 // fragment, and numbers and article numbers must appear in the source.
 // Anything that fails becomes a suggestion, never a card.
-import { AiError, chatJson, type FetchFn } from "./ai";
+import { AiError, chatJson, type FetchFn, modelContext } from "./ai";
 import type { AiSettings } from "./settings";
 import { type Db, newId, nowIso } from "./db";
 import { type DocumentKind, DOCUMENT_KIND_LABEL, getChunk, SOURCE_RANK, sha256Hex } from "./documents";
@@ -24,6 +24,8 @@ export interface PipelineContext {
   ai?: AiSettings;
   /** Reuse earlier answers to identical requests (default true). */
   useCache?: boolean;
+  /** Read fragments in pieces of at most this many characters (a retry after an answer cut short). */
+  pieceChars?: number;
   onProgress?: (p: JobProgress) => void;
 }
 
@@ -110,10 +112,89 @@ interface ExtractOutput {
 
 // ---------- AI call with cache ----------
 
-async function callAi<T>(db: Db, ctx: PipelineContext, promptId: string, user: string, schema: object): Promise<T> {
+// ---------- fitting prompts into the model's context ----------
+
+/**
+ * Rough token count of Polish text for the tokenizers of common local models
+ * (Llama, Qwen, Gemma: 2.5–3.5 characters per token; Bielik more); 2.5 errs on the safe side.
+ */
+export const CHARS_PER_TOKEN = 2.5;
+export const estimateTokens = (s: string) => Math.ceil(s.length / CHARS_PER_TOKEN);
+
+/** Room for the answer, per prompt (tokens); a small window gives a smaller share (an answer cut short is retried in pieces). */
+const ANSWER_TOKENS: Record<string, number> = { "extract-topics": 2048, "generate-materials": 1800, "merge-topics": 256 };
+const answerTokens = (promptId: string, window: number) => Math.min(ANSWER_TOKENS[promptId] ?? 1024, Math.max(256, Math.floor(window * 0.35)));
+
+const contextCache = new Map<string, number | null>();
+/** A window smaller than assumed, learnt from the server refusing a prompt (until the app is reopened). */
+const learntWindow = new Map<string, number>();
+const modelKey = (ai: AiSettings) => `${ai.provider}|${ai.baseUrl}|${ai.model}|${ai.contextLength}`;
+
+/** The model's context window: the setting, else Ollama's requested 8192, else what LM Studio / llama.cpp report, else 4096. */
+async function contextWindow(ai: AiSettings, fetchFn?: FetchFn): Promise<number> {
+  const learnt = learntWindow.get(modelKey(ai));
+  if (learnt) return learnt;
+  if (ai.contextLength > 0) return ai.contextLength;
+  if (ai.provider === "ollama") return 8192;
+  const key = `${ai.baseUrl}|${ai.model}`;
+  if (!contextCache.has(key)) contextCache.set(key, await modelContext(ai, fetchFn));
+  return contextCache.get(key) ?? 4096;
+}
+
+/** What a prompt may take, in tokens, so the instructions, the message and the answer fit. */
+function promptBudget(window: number, system: string, promptId: string): number {
+  return Math.floor(window * 0.92) - answerTokens(promptId, window) - estimateTokens(system) - 32;
+}
+
+const contextAdvice = (window: number) =>
+  `Model ma za mały kontekst (${window} tokenów), żeby zmieścić polecenie i odpowiedź. ` +
+  "Zwiększ długość kontekstu: w LM Studio przy ładowaniu modelu (Context Length, np. 8192), " +
+  "w Ollamie w ustawieniach aplikacji (Context length), a potem wpisz tę samą wartość w Pracowni → Lokalne AI → Długość kontekstu.";
+
+/**
+ * Calls the model, with the user message built for the room there is. When
+ * the server still says the prompt is too long (its real window is smaller
+ * than assumed), the message is rebuilt shorter and sent again.
+ */
+async function callAi<T>(
+  db: Db,
+  ctx: PipelineContext,
+  promptId: string,
+  build: string | ((budgetTokens: number) => string),
+  schema: object,
+): Promise<T> {
   const prompt = ctx.prompts[promptId];
   if (!prompt) throw new Error(`Brak promptu „${promptId}”.`);
   const ai = ctx.ai ?? getSettings(db).ai;
+  const window = await contextWindow(ai, ctx.fetchFn);
+  let lastError: unknown;
+  for (const factor of [1, 0.6, 0.35]) {
+    const win = Math.floor(window * factor);
+    const budget = promptBudget(win, prompt.system, promptId);
+    if (budget < 150) break;
+    const user = typeof build === "function" ? build(budget) : build;
+    try {
+      const value = await callAiOnce<T>(db, ctx, prompt, ai, user, schema, answerTokens(promptId, win), ai.provider === "ollama" ? win : undefined);
+      if (factor < 1) learntWindow.set(modelKey(ai), win);
+      return value;
+    } catch (e) {
+      if (!(e instanceof AiError) || e.kind !== "context") throw e;
+      lastError = e;
+    }
+  }
+  throw new AiError(`${contextAdvice(window)}${lastError instanceof Error ? ` (${lastError.message})` : ""}`, "context");
+}
+
+async function callAiOnce<T>(
+  db: Db,
+  ctx: PipelineContext,
+  prompt: PromptSet[string],
+  ai: AiSettings,
+  user: string,
+  schema: object,
+  maxTokens: number,
+  numCtx?: number,
+): Promise<T> {
   const inputHash = await sha256Hex(`${prompt.system}\n\n${user}`);
   if (ctx.useCache !== false) {
     const hit = db.get<{ output_json: string }>(
@@ -126,7 +207,11 @@ async function callAi<T>(db: Db, ctx: PipelineContext, promptId: string, user: s
     if (hit) return JSON.parse(hit.output_json) as T;
   }
   try {
-    const res = await chatJson<T>(ai, { system: prompt.system, user, schema, numCtx: 8192, ...(ctx.signal ? { signal: ctx.signal } : {}) }, ctx.fetchFn);
+    const res = await chatJson<T>(
+      ai,
+      { system: prompt.system, user, schema, maxTokens, ...(numCtx ? { numCtx } : {}), ...(ctx.signal ? { signal: ctx.signal } : {}) },
+      ctx.fetchFn,
+    );
     db.run(
       "INSERT INTO ai_call (id, prompt_id, prompt_version, model, input_hash, output_json, duration_ms, tokens_in, tokens_out, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'ok', ?)",
       newId(),
@@ -341,14 +426,22 @@ export function validateExtraction(
   return { topics, rejected };
 }
 
-function extractMessage(db: Db, chunkId: string): { user: string; subjectId: string; docKind: DocumentKind } {
+/**
+ * The extraction message for a fragment (or a piece of it), built for the room
+ * there is: the fragment always goes in whole; of the known topic names, those
+ * the fragment mentions come first, then the most important ones, as many as fit.
+ */
+function extractMessage(db: Db, chunkId: string): { build: (budgetTokens: number, text?: string) => string; subjectId: string; docKind: DocumentKind } {
   const c = getChunk(db, chunkId)!;
   const subject = db.get<{ id: string; name: string }>(
     "SELECT s.id, s.name FROM subject s JOIN source_document d ON d.subject_id = s.id WHERE d.id = ?",
     c.documentId,
   )!;
+  const chunkWords = new Set(tokenize(c.text));
   const known = db
-    .all<{ name: string }>("SELECT name FROM topic WHERE subject_id = ? ORDER BY exam_weight DESC, name LIMIT 120", subject.id)
+    .all<{ name: string }>("SELECT name FROM topic WHERE subject_id = ? ORDER BY exam_weight DESC, name LIMIT 200", subject.id)
+    .map((r, i) => ({ name: r.name, i, hit: tokenize(r.name).filter((w) => chunkWords.has(w)).length }))
+    .sort((a, b) => b.hit - a.hit || a.i - b.i)
     .map((r) => r.name);
   const where = [
     DOCUMENT_KIND_LABEL[c.documentKind],
@@ -356,16 +449,47 @@ function extractMessage(db: Db, chunkId: string): { user: string; subjectId: str
     c.lectureDate ? `wykład z ${c.lectureDate}` : "",
     c.pageFrom ? `s. ${c.pageFrom}${c.pageTo && c.pageTo !== c.pageFrom ? `–${c.pageTo}` : ""}` : "",
   ].filter(Boolean);
-  const user = [
-    `Przedmiot: ${subject.name}`,
-    `Źródło: ${where.join(", ")}`,
-    c.headingPath.length ? `Rozdział / sekcja: ${c.headingPath.join(" › ")}` : "",
-    known.length ? `Znane zagadnienia w tym przedmiocie (użyj tej samej nazwy, jeśli fragment dotyczy tego samego):\n${known.map((k) => `- ${k}`).join("\n")}` : "",
-    `FRAGMENT:\n"""\n${c.text}\n"""`,
-  ]
-    .filter(Boolean)
-    .join("\n\n");
-  return { user, subjectId: subject.id, docKind: c.documentKind };
+  const build = (budgetTokens: number, text = c.text) => {
+    const head = [`Przedmiot: ${subject.name}`, `Źródło: ${where.join(", ")}`, c.headingPath.length ? `Rozdział / sekcja: ${c.headingPath.join(" › ")}` : ""].filter(Boolean);
+    const fragment = `FRAGMENT:\n"""\n${text}\n"""`;
+    let room = budgetTokens - estimateTokens([...head, fragment].join("\n\n")) - 40;
+    const names: string[] = [];
+    for (const k of known.slice(0, 120)) {
+      const cost = estimateTokens(`- ${k}\n`);
+      if (cost > room) break;
+      names.push(k);
+      room -= cost;
+    }
+    return [
+      ...head,
+      names.length ? `Znane zagadnienia w tym przedmiocie (użyj tej samej nazwy, jeśli fragment dotyczy tego samego):\n${names.map((k) => `- ${k}`).join("\n")}` : "",
+      fragment,
+    ]
+      .filter(Boolean)
+      .join("\n\n");
+  };
+  return { build, subjectId: subject.id, docKind: c.documentKind };
+}
+
+/** A fragment too long for a small model's context, cut into pieces at paragraph or sentence ends. */
+export function splitText(text: string, maxChars: number): string[] {
+  if (text.length <= maxChars) return [text];
+  const units = text.split(/(?<=\n\n)|(?<=[.!?;:])\s+(?=\S)/);
+  const out: string[] = [];
+  let cur = "";
+  for (const u of units) {
+    if (cur && cur.length + u.length + 1 > maxChars) {
+      out.push(cur.trim());
+      cur = "";
+    }
+    if (u.length > maxChars) {
+      for (let i = 0; i < u.length; i += maxChars) out.push(u.slice(i, i + maxChars).trim());
+      continue;
+    }
+    cur += (cur && !cur.endsWith("\n") ? " " : "") + u;
+  }
+  if (cur.trim()) out.push(cur.trim());
+  return out.filter(Boolean);
 }
 
 export interface ChunkStats {
@@ -375,12 +499,42 @@ export interface ChunkStats {
   conflicts: number;
 }
 
+/**
+ * Extraction of a fragment. When the fragment does not fit the model's context
+ * with the instructions and the answer, it is read in pieces (halved again if
+ * the server still refuses) and the answers are put together; quotes are then
+ * checked against the whole fragment as always.
+ */
+async function extractInPieces(db: Db, ctx: PipelineContext, text: string, build: (budget: number, text?: string) => string): Promise<ExtractOutput> {
+  const prompt = ctx.prompts["extract-topics"];
+  if (!prompt) throw new Error("Brak promptu „extract-topics”.");
+  const ai = ctx.ai ?? getSettings(db).ai;
+  const room = promptBudget(await contextWindow(ai, ctx.fetchFn), prompt.system, "extract-topics") - estimateTokens(build(0, "")) - 20;
+  let maxChars = Math.min(ctx.pieceChars ?? Infinity, Math.max(300, Math.floor(room * CHARS_PER_TOKEN)));
+  for (;;) {
+    try {
+      const pieces = splitText(text, maxChars);
+      if (pieces.length === 1) return await callAi<ExtractOutput>(db, ctx, "extract-topics", (b) => build(b, pieces[0]), EXTRACT_SCHEMA);
+      const merged: ExtractOutput = { topics: [], gaps: [] };
+      for (const piece of pieces) {
+        const out = await callAi<ExtractOutput>(db, ctx, "extract-topics", (b) => build(b, piece), EXTRACT_SCHEMA);
+        merged.topics.push(...(out?.topics ?? []));
+        merged.gaps!.push(...(out?.gaps ?? []));
+      }
+      return merged;
+    } catch (e) {
+      if (!(e instanceof AiError) || e.kind !== "context" || maxChars <= 400) throw e;
+      maxChars = Math.floor(maxChars / 2);
+    }
+  }
+}
+
 /** Reads one fragment with the model and adds what it finds to the knowledge map. */
 export async function processChunk(db: Db, ctx: PipelineContext, chunkId: string): Promise<ChunkStats> {
   const chunk = getChunk(db, chunkId);
   if (!chunk) throw new Error("Nie ma takiego fragmentu.");
-  const { user, subjectId, docKind } = extractMessage(db, chunkId);
-  const out = await callAi<ExtractOutput>(db, ctx, "extract-topics", user, EXTRACT_SCHEMA);
+  const { build, subjectId, docKind } = extractMessage(db, chunkId);
+  const out = await extractInPieces(db, ctx, chunk.text, build);
   const neighbour = (ord: number) =>
     db.get<{ id: string; text: string }>("SELECT id, text FROM source_chunk WHERE document_id = ? AND ord = ?", chunk.documentId, ord);
   const prev = neighbour(chunk.ord - 1);
@@ -523,7 +677,10 @@ async function processChunkTolerant(db: Db, ctx: PipelineContext, chunkId: strin
   } catch (e) {
     if (!(e instanceof AiError) || e.kind !== "bad_json") throw e;
     try {
-      await processChunk(db, { ...ctx, useCache: false }, chunkId);
+      // An answer that is not valid JSON is often one cut short (too much to say about a long
+      // fragment): the second try reads the fragment in halves.
+      const len = getChunk(db, chunkId)?.text.length ?? 0;
+      await processChunk(db, { ...ctx, useCache: false, pieceChars: Math.max(400, Math.ceil(len / 2) + 50) }, chunkId);
     } catch (e2) {
       if (!(e2 instanceof AiError) || e2.kind !== "bad_json") throw e2;
       const c = getChunk(db, chunkId)!;
@@ -715,20 +872,78 @@ export async function generateForTopic(db: Db, ctx: PipelineContext, topicId: st
     const src = fieldChunk.get(f.id) ? ` [${labelOfChunk.get(fieldChunk.get(f.id)!) ?? "?"}]` : "";
     return `[${fieldLabel.get(f.id)}] ${FIELD_LABEL[f.field_type]}${kind}: ${c.text}${src}${c.quote ? `\n    cytat: "${c.quote}"` : ""}`;
   };
-  const user = [
-    `Przedmiot: ${subject.name}`,
-    `Zagadnienie: ${topic.name}`,
-    `Pola zagadnienia:\n${fields.map(describe).join("\n")}`,
-    related.length ? `Zagadnienia do odróżnienia:\n${related.map((t) => `${t.name}:\n${relatedFields.filter((f) => f.topic_id === t.id).map(describe).join("\n")}`).join("\n")}` : "",
-    `Fragmenty źródeł:\n${chunks.map((c) => `[${labelOfChunk.get(c.id)}] (${DOCUMENT_KIND_LABEL[c.documentKind]} „${c.documentTitle}”${c.pageFrom ? `, s. ${c.pageFrom}` : ""})\n"""\n${c.text.slice(0, 2500)}\n"""`).join("\n\n")}`,
-    existing.length ? `Istniejące materiały (nie powtarzaj):\n${existing.map((e) => `- ${e}`).join("\n")}` : "",
-    subject.learn_article_numbers ? "Typ provision jest dozwolony." : "Nie twórz materiałów typu provision.",
-    `Utwórz najwyżej ${limit} materiałów. W "field_ids" podaj etykiety pól (np. F1), w "citations" etykiety fragmentów (np. C1).`,
-  ]
-    .filter(Boolean)
-    .join("\n\n");
+  // Where each field's quote sits in its fragment: the excerpts sent to the model are cut around these.
+  const spans = new Map<string, { start: number; end: number }[]>();
+  for (const f of allFields) {
+    const c = db.get<{ chunk_id: string; char_start: number | null; char_end: number | null }>(
+      "SELECT chunk_id, char_start, char_end FROM citation WHERE owner_type = 'topic_field' AND owner_id = ? AND char_start IS NOT NULL LIMIT 1",
+      f.id,
+    );
+    if (c && c.char_start != null && c.char_end != null) spans.set(c.chunk_id, [...(spans.get(c.chunk_id) ?? []), { start: c.char_start, end: c.char_end }]);
+  }
+  /** The fragment, or, when it does not fit, the passages around the quotes (joined by "[…]"). */
+  const excerpt = (c: (typeof chunks)[number], maxChars: number) => {
+    if (c.text.length <= maxChars) return c.text;
+    const around = (spans.get(c.id) ?? []).sort((x, y) => x.start - y.start);
+    if (!around.length) return `${c.text.slice(0, maxChars)} […]`;
+    const pad = Math.max(60, Math.floor((maxChars - around.reduce((n, x) => n + x.end - x.start, 0)) / (2 * around.length)));
+    const windows: { start: number; end: number }[] = [];
+    for (const x of around) {
+      const w = { start: Math.max(0, x.start - pad), end: Math.min(c.text.length, x.end + pad) };
+      const last = windows[windows.length - 1];
+      if (last && w.start <= last.end) last.end = Math.max(last.end, w.end);
+      else windows.push(w);
+    }
+    return windows.map((w) => `${w.start > 0 ? "[…] " : ""}${c.text.slice(w.start, w.end).trim()}${w.end < c.text.length ? " […]" : ""}`).join("\n").slice(0, maxChars + 200);
+  };
 
-  const out = await callAi<{ materials: GeneratedMaterial[]; suggestions: string[] }>(db, ctx, "generate-materials", user, GENERATE_SCHEMA);
+  /** Built for the room there is: fields always; then source passages, materials not to repeat and related topics as they fit. */
+  const build = (budgetTokens: number) => {
+    // A topic with many long fields: the fields' quotes go first, then the fields that do not fit (cards for them come next time).
+    let fieldLines = fields.map(describe);
+    if (estimateTokens(fieldLines.join("\n")) > budgetTokens * 0.6) fieldLines = fields.map((f) => describe(f).split("\n    cytat:")[0]!);
+    while (fieldLines.length > 1 && estimateTokens(fieldLines.join("\n")) > budgetTokens * 0.6) fieldLines.pop();
+    const required = [
+      `Przedmiot: ${subject.name}`,
+      `Zagadnienie: ${topic.name}`,
+      `Pola zagadnienia:\n${fieldLines.join("\n")}`,
+      subject.learn_article_numbers ? "Typ provision jest dozwolony." : "Nie twórz materiałów typu provision.",
+      `Utwórz najwyżej ${limit} materiałów. W "field_ids" podaj etykiety pól (np. F1), w "citations" etykiety fragmentów (np. C1).`,
+    ];
+    let room = budgetTokens - estimateTokens(required.join("\n\n")) - 20;
+    const relatedBlock = related.length
+      ? `Zagadnienia do odróżnienia:\n${related.map((t) => `${t.name}:\n${relatedFields.filter((f) => f.topic_id === t.id).map(describe).join("\n")}`).join("\n")}`
+      : "";
+    const existingLines = existing.slice(-40).map((e) => `- ${e.slice(0, 160)}`);
+    // Source passages first: the cards must be anchored in them.
+    const chunkHead = (c: (typeof chunks)[number]) => `[${labelOfChunk.get(c.id)}] (${DOCUMENT_KIND_LABEL[c.documentKind]} „${c.documentTitle}”${c.pageFrom ? `, s. ${c.pageFrom}` : ""})`;
+    const forChunks = Math.max(0, room - Math.min(estimateTokens(relatedBlock), Math.floor(room * 0.2)) - Math.min(estimateTokens(existingLines.join("\n")), Math.floor(room * 0.15)));
+    const perChunk = chunks.length ? Math.floor((forChunks * CHARS_PER_TOKEN) / chunks.length) - 60 : 0;
+    const chunkBlock =
+      chunks.length && perChunk >= 150
+        ? `Fragmenty źródeł:\n${chunks.map((c) => `${chunkHead(c)}\n"""\n${excerpt(c, Math.min(2500, perChunk))}\n"""`).join("\n\n")}`
+        : "";
+    room -= estimateTokens(chunkBlock);
+    const relatedFits = relatedBlock && estimateTokens(relatedBlock) <= room ? relatedBlock : "";
+    room -= estimateTokens(relatedFits);
+    const keep: string[] = [];
+    for (const line of existingLines.reverse()) {
+      if (estimateTokens(line) + 1 > room) break;
+      keep.unshift(line);
+      room -= estimateTokens(line) + 1;
+    }
+    return [
+      ...required.slice(0, 3),
+      relatedFits,
+      chunkBlock,
+      keep.length ? `Istniejące materiały (nie powtarzaj):\n${keep.join("\n")}` : "",
+      ...required.slice(3),
+    ]
+      .filter(Boolean)
+      .join("\n\n");
+  };
+
+  const out = await callAi<{ materials: GeneratedMaterial[]; suggestions: string[] }>(db, ctx, "generate-materials", build, GENERATE_SCHEMA);
   const seen = new Set(existing.map(normalizeForMatch));
   let created = 0;
   let rejected = 0;
@@ -1048,8 +1263,15 @@ export async function runQueue(db: Db, ctx: PipelineContext): Promise<RunResult>
           }
           // Enough cards to cover every element of the topic (one thing per card), within the lecture's budget.
           const fields = db.get<{ n: number }>("SELECT COUNT(*) AS n FROM topic_field WHERE topic_id = ? AND status = 'active'", topics[i]!)!.n;
-          const r = await generateForTopic(db, ctx, topics[i]!, Math.min(budget, Math.min(10, Math.max(4, fields))), job.id);
-          budget -= r.created;
+          try {
+            const r = await generateForTopic(db, ctx, topics[i]!, Math.min(budget, Math.min(10, Math.max(4, fields))), job.id);
+            budget -= r.created;
+          } catch (e) {
+            // One topic the model cannot answer in valid JSON does not stop the cards for the others.
+            if (!(e instanceof AiError) || e.kind !== "bad_json") throw e;
+            const t = db.get<{ name: string }>("SELECT name FROM topic WHERE id = ?", topics[i]!);
+            addSuggestion(db, job.subject_id, "gap", `Nie udało się przygotować fiszek dla „${t?.name ?? "?"}” (model zwrócił niepoprawną odpowiedź). Spróbuj ponownie przyciskiem „Uzupełnij” przy zagadnieniu.`, topics[i]!);
+          }
           setJob("running", { done: i + 1, total });
           ctx.onProgress?.({ jobId: job.id, kind: "generate", done: i + 1, total, label });
         }
@@ -1094,7 +1316,7 @@ export async function benchmarkModels(db: Db, ctx: PipelineContext, models: stri
     for (const c of chunks) {
       if (ctx.signal?.aborted) break;
       try {
-        const out = await callAi<ExtractOutput>(db, { ...ctx, ai: { ...base, model }, useCache: false }, "extract-topics", extractMessage(db, c.id).user, EXTRACT_SCHEMA);
+        const out = await callAi<ExtractOutput>(db, { ...ctx, ai: { ...base, model }, useCache: false }, "extract-topics", extractMessage(db, c.id).build, EXTRACT_SCHEMA);
         row.validJson++;
         const v = validateExtraction(out, c.text);
         row.topics += v.topics.length;

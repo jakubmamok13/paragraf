@@ -83,12 +83,13 @@ function merge(user: string) {
 
 function generate(user: string) {
   const topic = user.match(/Zagadnienie: (.*)/)?.[1]?.trim() ?? "";
-  const fields = [...user.matchAll(/^\[(F\d+)\] ([^:]+?)(?: \([a-z]+\))?: (.*?)(?: \[(C\d+)\])?\n {4}cytat: "(.*)"$/gm)].map((m) => ({
+  // A field line, with its quote on the next line (left out when the prompt had to be short).
+  const fields = [...user.matchAll(/^\[(F\d+)\] ([^:]+?)(?: \([a-z]+\))?: (.*?)(?: \[(C\d+)\])?(?:\n {4}cytat: "(.*)")?$/gm)].map((m) => ({
     label: m[1]!,
     kind: m[2]!,
     text: m[3]!,
     chunk: m[4] ?? "C1",
-    quote: m[5]!,
+    quote: m[5] ?? m[3]!,
   }));
   const own = fields.filter((f) => user.split("Zagadnienia do odróżnienia:")[0]!.includes(`[${f.label}]`));
   const materials: any[] = [];
@@ -163,3 +164,37 @@ export const fakeFetch = (async (url: string, init?: RequestInit) => {
   if (url.endsWith("/api/chat")) return json(fakeModelReply(JSON.parse(String(init?.body))));
   return new Response("not found", { status: 404 });
 }) as unknown as typeof fetch;
+
+/**
+ * fetch() that behaves like LM Studio with the fake model loaded with a fixed
+ * context window: a prompt (plus the room asked for the answer) longer than
+ * the window is refused with LM Studio's error, as a real server does.
+ * `report` = whether /api/v0/models tells the window (older servers do not).
+ */
+export function fakeLmStudio(window: number, opts: { report?: boolean; log?: { promptTokens: number; maxTokens: number; refused: boolean }[] } = {}) {
+  // Polish text in a Llama/Qwen tokenizer: about 2.6 characters per token.
+  const tokens = (s: string) => Math.ceil(s.length / 2.6);
+  return (async (url: string, init?: RequestInit) => {
+    const json = (v: unknown, status = 200) => new Response(JSON.stringify(v), { status, headers: { "Content-Type": "application/json" } });
+    if (url.endsWith("/v1/models")) return json({ data: FAKE_MODELS.map((id) => ({ id })) });
+    if (url.includes("/api/v0/models/")) {
+      return opts.report === false ? new Response("not found", { status: 404 }) : json({ id: FAKE_MODELS[0], state: "loaded", max_context_length: 32768, loaded_context_length: window });
+    }
+    if (url.endsWith("/v1/chat/completions")) {
+      const body = JSON.parse(String(init?.body));
+      const promptTokens = tokens(body.messages.map((m: any) => m.content).join("\n"));
+      const maxTokens = body.max_tokens ?? 0;
+      const refused = promptTokens + maxTokens > window;
+      opts.log?.push({ promptTokens, maxTokens, refused });
+      if (refused) {
+        return json(
+          { error: "the prompt is longer than the context length currently available to the model; shorten the prompt, adjust the context length in settings, or use a model with a longer context length" },
+          400,
+        );
+      }
+      const reply = fakeModelReply(body) as any;
+      return json({ choices: [{ message: { role: "assistant", content: reply.message.content } }], usage: { prompt_tokens: promptTokens, completion_tokens: 200 } });
+    }
+    return new Response("not found", { status: 404 });
+  }) as unknown as typeof fetch;
+}

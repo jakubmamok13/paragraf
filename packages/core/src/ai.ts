@@ -42,6 +42,8 @@ export interface ChatJsonRequest {
   signal?: AbortSignal;
   /** Context window to request from Ollama (tokens). */
   numCtx?: number;
+  /** Upper bound of the answer's length (tokens), so prompt + answer fit the context. */
+  maxTokens?: number;
 }
 
 export interface ChatJsonResult<T> {
@@ -55,7 +57,7 @@ export interface ChatJsonResult<T> {
 export class AiError extends Error {
   constructor(
     message: string,
-    readonly kind: "unreachable" | "http" | "bad_json" | "no_model",
+    readonly kind: "unreachable" | "http" | "bad_json" | "no_model" | "context",
   ) {
     super(message);
   }
@@ -75,12 +77,13 @@ export async function chatJson<T>(cfg: AiSettings, req: ChatJsonRequest, fetchFn
         messages,
         stream: false,
         format: req.schema,
-        options: { temperature: 0, ...(req.numCtx ? { num_ctx: req.numCtx } : {}) },
+        options: { temperature: 0, ...(req.numCtx ? { num_ctx: req.numCtx } : {}), ...(req.maxTokens ? { num_predict: req.maxTokens } : {}) },
       }
     : {
         model: cfg.model,
         messages,
         temperature: 0,
+        ...(req.maxTokens ? { max_tokens: req.maxTokens } : {}),
         response_format: { type: "json_schema", json_schema: { name: "answer", strict: true, schema: req.schema } },
       };
 
@@ -96,7 +99,10 @@ export async function chatJson<T>(cfg: AiSettings, req: ChatJsonRequest, fetchFn
   } catch (e) {
     throw new AiError(`Brak połączenia z lokalnym AI: ${e instanceof Error ? e.message : e}`, "unreachable");
   }
-  if (!res.ok) throw new AiError(`Lokalne AI zwróciło błąd HTTP ${res.status}: ${await res.text().catch(() => "")}`, "http");
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new AiError(`Lokalne AI zwróciło błąd HTTP ${res.status}: ${text}`, isContextError(text) ? "context" : "http");
+  }
   const data: any = await res.json();
   const raw: string = ollama ? data?.message?.content ?? "" : data?.choices?.[0]?.message?.content ?? "";
   let value: T;
@@ -112,6 +118,37 @@ export async function chatJson<T>(cfg: AiSettings, req: ChatJsonRequest, fetchFn
     tokensIn: (ollama ? data?.prompt_eval_count : data?.usage?.prompt_tokens) ?? null,
     tokensOut: (ollama ? data?.eval_count : data?.usage?.completion_tokens) ?? null,
   };
+}
+
+/**
+ * "Prompt too long for the context" as Ollama, LM Studio and llama.cpp word it
+ * (they differ and change between versions).
+ */
+export function isContextError(text: string): boolean {
+  return /context (length|window|size|overflow)|n_ctx|exceeds the (available )?context|prompt is (too )?long|tokens to keep|too many tokens|maximum context/i.test(text);
+}
+
+/**
+ * The context window the server has the model loaded with, when it says so:
+ * LM Studio (/api/v0/models/…: loaded_context_length) or llama.cpp (/props: n_ctx).
+ * Ollama takes the window from each request (num_ctx), so there is nothing to ask.
+ */
+export async function modelContext(cfg: AiSettings, fetchFn: FetchFn = fetch): Promise<number | null> {
+  if (cfg.provider === "ollama" || !cfg.baseUrl || !cfg.model) return null;
+  const get = async (url: string) => {
+    try {
+      const res = await fetchFn(url, { signal: AbortSignal.timeout(3000) });
+      return res.ok ? await res.json() : null;
+    } catch {
+      return null;
+    }
+  };
+  const lm = await get(`${cfg.baseUrl}/api/v0/models/${encodeURIComponent(cfg.model)}`);
+  const lmCtx = Number(lm?.loaded_context_length ?? (lm?.state === "loaded" ? lm?.context_length : undefined));
+  if (lmCtx > 0) return lmCtx;
+  const props = await get(`${cfg.baseUrl}/props`);
+  const n = Number(props?.default_generation_settings?.n_ctx ?? props?.n_ctx);
+  return n > 0 ? n : null;
 }
 
 /** Human-readable hint for a failed check, in Polish, for the settings screen. */

@@ -75,7 +75,9 @@ describe("settings", () => {
     const db = freshDb();
     updateSettings(db, { ai: { provider: "openai", baseUrl: " http://localhost:1234/ ", model: "" } });
     updateSettings(db, { dailyMinutes: 30 });
-    expect(getSettings(db).ai).toEqual({ provider: "openai", baseUrl: "http://localhost:1234", model: "" });
+    expect(getSettings(db).ai).toEqual({ provider: "openai", baseUrl: "http://localhost:1234", model: "", contextLength: 0 });
+    expect(updateSettings(db, { ai: { contextLength: 300 } }).ai.contextLength).toBe(1024);
+    expect(updateSettings(db, { ai: { contextLength: 0 } }).ai).toMatchObject({ provider: "openai", contextLength: 0 });
   });
 });
 
@@ -275,8 +277,8 @@ describe("packages", () => {
 });
 
 describe("local AI client", () => {
-  const ollama: AiSettings = { provider: "ollama", baseUrl: "http://localhost:11434", model: "bielik:11b" };
-  const lmStudio: AiSettings = { provider: "openai", baseUrl: "http://localhost:1234", model: "qwen" };
+  const ollama: AiSettings = { provider: "ollama", baseUrl: "http://localhost:11434", model: "bielik:11b", contextLength: 0 };
+  const lmStudio: AiSettings = { provider: "openai", baseUrl: "http://localhost:1234", model: "qwen", contextLength: 0 };
   const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
 
   it("lists Ollama models and sees whether the chosen one is there", async () => {

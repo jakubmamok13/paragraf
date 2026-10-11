@@ -11,6 +11,11 @@ export interface AiSettings {
   baseUrl: string;
   /** Model used for extraction and generation. Empty = not chosen yet. */
   model: string;
+  /**
+   * The model's context window in tokens. 0 = automatic: 8192 requested from
+   * Ollama; for LM Studio / llama.cpp what the server reports, else 4096.
+   */
+  contextLength: number;
 }
 
 export interface ExternalSettings {
@@ -51,7 +56,7 @@ export const DEFAULT_SETTINGS: Settings = {
   newPerDay: 15,
   maxNewPerLecture: 20,
   interleaveSubjects: true,
-  ai: { provider: "ollama", baseUrl: "http://localhost:11434", model: "" },
+  ai: { provider: "ollama", baseUrl: "http://localhost:11434", model: "", contextLength: 0 },
   autoProcess: true,
   promptOverrides: {},
   external: {
@@ -89,8 +94,10 @@ export function getSettings(db: Db): Settings {
   return { ...DEFAULT_SETTINGS, ...stored, ai, external } as Settings;
 }
 
-export function updateSettings(db: Db, patch: Partial<Settings>): Settings {
-  const next: Settings = { ...getSettings(db), ...patch };
+export type SettingsPatch = Partial<Omit<Settings, "ai" | "external">> & { ai?: Partial<AiSettings>; external?: Partial<ExternalSettings> };
+
+export function updateSettings(db: Db, patch: SettingsPatch): Settings {
+  const next = { ...getSettings(db), ...patch } as Settings;
   if (patch.ai) next.ai = { ...getSettings(db).ai, ...patch.ai };
   if (patch.external) next.external = { ...getSettings(db).external, ...patch.external };
   next.lessonRate = Math.min(1.6, Math.max(0.6, Number(next.lessonRate) || 1));
@@ -100,6 +107,8 @@ export function updateSettings(db: Db, patch: Partial<Settings>): Settings {
     next[key] = key === "targetRetention" ? clamp(v, range) : Math.round(clamp(v, range));
   }
   next.ai.baseUrl = next.ai.baseUrl.trim().replace(/\/+$/, "");
+  const n = Math.round(Number(next.ai.contextLength) || 0);
+  next.ai.contextLength = n <= 0 ? 0 : Math.min(262144, Math.max(1024, n));
   // Only changed keys get a new timestamp, so a change made on another device to a
   // different setting is not overwritten when the two merge.
   const stored = new Map(db.all<{ key: string; value_json: string }>("SELECT key, value_json FROM setting").map((r) => [r.key, r.value_json]));

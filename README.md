@@ -35,6 +35,14 @@ Założenia i plan: [`docs/PLAN.md`](docs/PLAN.md).
 LM Studio: włącz serwer (Developer → Start Server) i CORS, w Paragrafie wybierz
 „LM Studio / inny”, adres `http://localhost:1234`.
 
+**Długość kontekstu.** Model musi zmieścić polecenie, fragment źródła i odpowiedź.
+Paragraf dopasowuje polecenia do kontekstu modelu: dla LM Studio odczytuje go z
+serwera, Ollamę prosi o 8192 tokeny, a gdy serwer i tak odmówi, ponawia krótszym
+poleceniem. Im mniejszy kontekst, tym mniej treści model widzi naraz. Ustaw
+więc co najmniej 8192: w LM Studio przy ładowaniu modelu (Context Length), w
+Ollamie w Settings → Context length. Tę samą wartość możesz wpisać w
+Pracowni → Lokalne AI → Długość kontekstu.
+
 ## Pracownia: od notatki do fiszek (komputer)
 
 1. **Przedmioty → Dodaj**: nazwa, forma i data egzaminu.
